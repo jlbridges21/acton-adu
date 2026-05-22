@@ -1,81 +1,100 @@
 # Acton BR Library
 
-Full-stack floorplan library for Acton ADU plans. Anyone with the URL can browse plans; team members upload via a password-protected admin page.
+Public floorplan library for Acton ADU plans. Anyone with the URL can browse. Only **admin** users (assigned in Supabase) can upload new plans after signing in.
 
 ## Tech stack
 
 - React + Vite + Tailwind CSS
-- Supabase (PostgreSQL + Storage)
-- React Router (`/` public library, `/admin` upload)
+- Supabase Auth, Database, and Storage
 
 ## Setup
 
-### 1. Create a Supabase project
+### 1. Supabase project
 
-1. Go to [supabase.com](https://supabase.com) and create a project.
-2. Copy your **Project URL** and **anon public** key from **Settings → API**.
+Create a project at [supabase.com](https://supabase.com). Copy **Project URL** and **anon key** from **Settings → API**.
 
-### 2. Database table
+### 2. Database
 
-In the Supabase **SQL Editor**, run the script in `supabase-schema.sql` (creates the `floorplans` table and basic RLS policies for version 1).
+Run `supabase-schema.sql` in the **SQL Editor**. This creates:
 
-### 3. Storage bucket
+- `floorplans` — plan metadata (public read)
+- `profiles` — one row per user with `role` (`user` or `admin`)
+- RLS so only admins can insert floorplans
 
-1. Open **Storage** in Supabase.
-2. Create a bucket named **`floorplans`**.
-3. Make it **public** (so plan files can open in the browser).
-4. Add a storage policy allowing uploads with the anon key, for example:
+### 3. Auth
+
+In **Authentication → Providers**, enable **Email** (password sign-in).
+
+Optional: disable “Confirm email” for faster internal testing.
+
+### 4. Storage
+
+1. Create a **public** bucket named `floorplans`.
+2. Add storage policies from the bottom of `supabase-schema.sql` (public read, admin-only upload).
+
+### 5. Grant admin access (manual)
+
+When someone should upload plans, promote them in SQL:
 
 ```sql
-create policy "Allow public uploads"
-on storage.objects for insert
-with check (bucket_id = 'floorplans');
-
-create policy "Allow public read"
-on storage.objects for select
-using (bucket_id = 'floorplans');
+update public.profiles
+set role = 'admin'
+where email = 'teammember@acton.com';
 ```
 
-### 4. Environment variables
+New sign-ups default to `user` (browse only).
+
+**Existing projects:** add the `series` column:
+
+```sql
+alter table floorplans add column if not exists series text;
+```
+
+(See `supabase-migration-series.sql`.)
+
+**Existing projects:** if the table already exists, run only the new policy:
+
+```sql
+create policy "Admins can update floorplans"
+  on floorplans for update
+  to authenticated
+  using (public.is_admin())
+  with check (public.is_admin());
+```
+
+### 6. Environment variables
 
 ```bash
 cp .env.example .env
 ```
-
-Edit `.env`:
 
 ```
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your_anon_key
 ```
 
-Never commit `.env` or real keys.
-
-### 5. Run the app
+### 7. Run
 
 ```bash
 npm install
 npm run dev
 ```
 
-- Public library: `http://localhost:5173/`
-- Admin upload: `http://localhost:5173/admin` (password: `actonadmin`)
+Open `http://localhost:5173` — single page for everyone.
 
-Change the admin password in `src/config/admin.js`. For production, replace this with **Supabase Auth** and tighten RLS policies.
+- **Browse** — no login required  
+- **+ Add Plan** — sign in; only `admin` role can upload  
 
-## How the app works
+## How it works
 
-| Area | File | Purpose |
-|------|------|---------|
-| Supabase client | `src/lib/supabaseClient.js` | Connects using `VITE_*` env vars |
-| Fetch plans | `src/lib/floorplans.js` → `fetchFloorplans()` | Loads rows from the `floorplans` table |
-| Upload | `src/lib/floorplans.js` → `uploadFloorplan()` | File → Storage bucket, then row insert |
-| Public UI | `src/pages/LibraryPage.jsx` | Search, filters, cards |
-| Admin UI | `src/pages/AdminPage.jsx` | Password gate + upload form |
-
-## Deploying
-
-For client-side routing (`/admin`), configure your host to serve `index.html` for all routes (SPA fallback).
+| File | Purpose |
+|------|---------|
+| `src/lib/supabaseClient.js` | Supabase connection |
+| `src/context/AuthContext.jsx` | Sign in/up, session, reads `profiles.role` |
+| `src/pages/LibraryPage.jsx` | Public library + Add Plan flow |
+| `src/components/LoginModal.jsx` | Login when adding a plan |
+| `src/components/AddPlanModal.jsx` | Upload form (admins only) |
+| `src/lib/floorplans.js` | Fetch plans / upload to Storage + table |
 
 ## Build
 
@@ -83,4 +102,3 @@ For client-side routing (`/admin`), configure your host to serve `index.html` fo
 npm run build
 npm run preview
 ```
-# acton-adu
