@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Header from "../components/Header";
 import FilterBar from "../components/FilterBar";
-import FloorplanCard from "../components/FloorplanCard";
+import SortBar from "../components/SortBar";
+import FloorplanGrid from "../components/FloorplanGrid";
+import FloorplanSeriesSections from "../components/FloorplanSeriesSections";
 import FloorplanViewModal from "../components/FloorplanViewModal";
 import FloorplanEditModal from "../components/FloorplanEditModal";
 import EmptyState from "../components/EmptyState";
@@ -16,6 +18,7 @@ import {
   SORT_OPTIONS,
   filterFloorplans,
   getUniqueSeries,
+  groupFloorplansBySeries,
   sortFloorplans,
 } from "../utils/filters";
 
@@ -83,10 +86,13 @@ export default function LibraryPage() {
     [floorplans, filters, sortBy],
   );
 
-  const clearFilters = () => {
-    setFilters(DEFAULT_FILTERS);
-    setSortBy(DEFAULT_SORT);
-  };
+  const seriesGroups = useMemo(
+    () =>
+      sortBy === "series" ? groupFloorplansBySeries(filteredFloorplans) : [],
+    [filteredFloorplans, sortBy],
+  );
+
+  const clearFilters = () => setFilters(DEFAULT_FILTERS);
 
   const handleOpenPlan = (plan) => setSelectedPlan(plan);
 
@@ -141,10 +147,7 @@ export default function LibraryPage() {
       <FilterBar
         filters={filters}
         seriesOptions={seriesOptions}
-        sortBy={sortBy}
-        sortOptions={SORT_OPTIONS}
         onFilterChange={setFilters}
-        onSortChange={setSortBy}
         onClearFilters={clearFilters}
       />
 
@@ -163,24 +166,28 @@ export default function LibraryPage() {
             <p className="text-sm font-medium text-slate-600">Loading floorplans…</p>
           ) : (
             <>
-              <p className="mb-6 text-sm font-medium text-slate-600">
-                Showing {filteredFloorplans.length} of {floorplans.length} floorplans
-              </p>
+              <SortBar
+                showingCount={filteredFloorplans.length}
+                totalCount={floorplans.length}
+                sortBy={sortBy}
+                sortOptions={SORT_OPTIONS}
+                onSortChange={setSortBy}
+              />
 
               {showLibraryEmpty ? (
                 <EmptyState variant="library" />
               ) : showFilteredEmpty ? (
                 <EmptyState variant="filtered" onClearFilters={clearFilters} />
+              ) : sortBy === "series" ? (
+                <FloorplanSeriesSections
+                  groups={seriesGroups}
+                  onOpenPlan={handleOpenPlan}
+                />
               ) : (
-                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {filteredFloorplans.map((plan) => (
-                    <FloorplanCard
-                      key={plan.id}
-                      plan={plan}
-                      onOpenPlan={handleOpenPlan}
-                    />
-                  ))}
-                </div>
+                <FloorplanGrid
+                  plans={filteredFloorplans}
+                  onOpenPlan={handleOpenPlan}
+                />
               )}
             </>
           )}

@@ -8,11 +8,10 @@ export const DEFAULT_FILTERS = {
   preApproved: "all",
 };
 
-export const DEFAULT_SORT = "newest";
+export const DEFAULT_SORT = "series";
 
 /** Options for the “Sort by” dropdown on the library page. */
 export const SORT_OPTIONS = [
-  { value: "newest", label: "Newest first" },
   { value: "sqft-desc", label: "Sq ft: largest to smallest" },
   { value: "sqft-asc", label: "Sq ft: smallest to largest" },
   { value: "series", label: "Series (A–Z)" },
@@ -110,6 +109,31 @@ export function sortFloorplans(floorplans, sortBy = DEFAULT_SORT) {
         (a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0),
       );
   }
+}
+
+/**
+ * Group already-sorted plans into series sections for Series (A–Z) view.
+ * Case-insensitive grouping; preserves display label from first plan in group.
+ */
+export function groupFloorplansBySeries(floorplans) {
+  const byKey = new Map();
+
+  for (const plan of floorplans) {
+    const label = normalizeSeries(plan.series);
+    const key = label ? label.toLowerCase() : "__unassigned__";
+    const displayLabel = label || "Unassigned series";
+
+    if (!byKey.has(key)) {
+      byKey.set(key, { key, label: displayLabel, plans: [] });
+    }
+    byKey.get(key).plans.push(plan);
+  }
+
+  return [...byKey.values()].sort((a, b) => {
+    if (a.key === "__unassigned__") return 1;
+    if (b.key === "__unassigned__") return -1;
+    return a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
+  });
 }
 
 export function filterFloorplans(floorplans, filters) {

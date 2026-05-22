@@ -7,10 +7,7 @@ const inputClass =
 export default function FilterBar({
   filters,
   seriesOptions = [],
-  sortBy,
-  sortOptions = [],
   onFilterChange,
-  onSortChange,
   onClearFilters,
 }) {
   const update = (key, value) => onFilterChange({ ...filters, [key]: value });
@@ -18,18 +15,6 @@ export default function FilterBar({
   return (
     <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-4 shadow-sm backdrop-blur sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3">
-        <select
-          value={sortBy}
-          onChange={(e) => onSortChange(e.target.value)}
-          className={selectClass}
-          aria-label="Sort floorplans"
-        >
-          {sortOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
         <input
           type="search"
           placeholder="Search by plan name..."
