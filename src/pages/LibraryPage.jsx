@@ -12,8 +12,11 @@ import { useAuth } from "../context/AuthContext";
 import { fetchFloorplans } from "../lib/floorplans";
 import {
   DEFAULT_FILTERS,
+  DEFAULT_SORT,
+  SORT_OPTIONS,
   filterFloorplans,
   getUniqueSeries,
+  sortFloorplans,
 } from "../utils/filters";
 
 export default function LibraryPage() {
@@ -29,6 +32,7 @@ export default function LibraryPage() {
 
   const [floorplans, setFloorplans] = useState([]);
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [sortBy, setSortBy] = useState(DEFAULT_SORT);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -75,11 +79,14 @@ export default function LibraryPage() {
   const seriesOptions = useMemo(() => getUniqueSeries(floorplans), [floorplans]);
 
   const filteredFloorplans = useMemo(
-    () => filterFloorplans(floorplans, filters),
-    [floorplans, filters],
+    () => sortFloorplans(filterFloorplans(floorplans, filters), sortBy),
+    [floorplans, filters, sortBy],
   );
 
-  const clearFilters = () => setFilters(DEFAULT_FILTERS);
+  const clearFilters = () => {
+    setFilters(DEFAULT_FILTERS);
+    setSortBy(DEFAULT_SORT);
+  };
 
   const handleOpenPlan = (plan) => setSelectedPlan(plan);
 
@@ -134,7 +141,10 @@ export default function LibraryPage() {
       <FilterBar
         filters={filters}
         seriesOptions={seriesOptions}
+        sortBy={sortBy}
+        sortOptions={SORT_OPTIONS}
         onFilterChange={setFilters}
+        onSortChange={setSortBy}
         onClearFilters={clearFilters}
       />
 

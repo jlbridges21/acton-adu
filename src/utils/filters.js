@@ -8,6 +8,16 @@ export const DEFAULT_FILTERS = {
   preApproved: "all",
 };
 
+export const DEFAULT_SORT = "newest";
+
+/** Options for the “Sort by” dropdown on the library page. */
+export const SORT_OPTIONS = [
+  { value: "newest", label: "Newest first" },
+  { value: "sqft-desc", label: "Sq ft: largest to smallest" },
+  { value: "sqft-asc", label: "Sq ft: smallest to largest" },
+  { value: "series", label: "Series (A–Z)" },
+];
+
 export function formatPrice(price) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -68,6 +78,38 @@ function matchesSeries(plan, filterSeries) {
   const planKey = normalizeSeries(plan.series).toLowerCase();
   const filterKey = filterSeries.toLowerCase();
   return planKey === filterKey;
+}
+
+/**
+ * Order plans for display after filtering.
+ * Series sort is case-insensitive; ties break by sq ft then name.
+ */
+export function sortFloorplans(floorplans, sortBy = DEFAULT_SORT) {
+  const list = [...floorplans];
+
+  switch (sortBy) {
+    case "sqft-desc":
+      return list.sort((a, b) => (b.squareFeet ?? 0) - (a.squareFeet ?? 0));
+    case "sqft-asc":
+      return list.sort((a, b) => (a.squareFeet ?? 0) - (b.squareFeet ?? 0));
+    case "series":
+      return list.sort((a, b) => {
+        const bySeries = normalizeSeries(a.series).localeCompare(
+          normalizeSeries(b.series),
+          undefined,
+          { sensitivity: "base" },
+        );
+        if (bySeries !== 0) return bySeries;
+        const bySqft = (a.squareFeet ?? 0) - (b.squareFeet ?? 0);
+        if (bySqft !== 0) return bySqft;
+        return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      });
+    case "newest":
+    default:
+      return list.sort(
+        (a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0),
+      );
+  }
 }
 
 export function filterFloorplans(floorplans, filters) {

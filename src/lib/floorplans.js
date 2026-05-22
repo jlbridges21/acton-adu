@@ -22,6 +22,7 @@ export function mapFloorplanFromDb(row) {
     fileUrl: row.file_url,
     filePath: row.file_path,
     series: row.series ?? "",
+    createdAt: row.created_at,
   };
 }
 

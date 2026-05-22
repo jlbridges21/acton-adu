@@ -96,7 +96,7 @@ export default function FloorplanEditModal({ plan, onClose, onSaved }) {
       titleId="edit-plan-title"
       maxWidthClass="max-w-3xl"
     >
-      <FloorplanMedia plan={plan} />
+      <FloorplanMedia plan={plan} openImageInNewTab />
 
       <form onSubmit={handleSubmit} className="space-y-4 px-4 py-4 sm:px-5">
         <div>

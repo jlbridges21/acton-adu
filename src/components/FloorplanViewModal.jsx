@@ -34,7 +34,7 @@ export default function FloorplanViewModal({
         </>
       }
     >
-      <FloorplanMedia plan={plan} />
+      <FloorplanMedia plan={plan} openImageInNewTab />
 
       <dl className="grid grid-cols-2 gap-3 border-b border-slate-200 px-4 py-4 sm:grid-cols-3 sm:px-5">
         {plan.series && (
