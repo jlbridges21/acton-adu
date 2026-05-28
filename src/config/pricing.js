@@ -19,7 +19,7 @@ export function getDisplayBasePrice(
     const sqft = Number(squareFeet) || 0;
     const laPrice =
       value * LA_PRICE_MULTIPLIER + sqft * LA_SQFT_RATE - LA_PRICE_OFFSET;
-    return Math.round(laPrice);
+    return Math.ceil(laPrice / 1000) * 1000;
   }
 
   return value;
