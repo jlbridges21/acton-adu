@@ -10,6 +10,7 @@ import EmptyState from "../components/EmptyState";
 import LoginModal from "../components/LoginModal";
 import AddPlanModal from "../components/AddPlanModal";
 import PermissionModal from "../components/PermissionModal";
+import CatalogExportBar from "../components/CatalogExportBar";
 import { useAuth } from "../context/AuthContext";
 import { fetchFloorplans } from "../lib/floorplans";
 import {
@@ -44,6 +45,7 @@ export default function LibraryPage() {
   const [permissionOpen, setPermissionOpen] = useState(false);
   const [pendingAdd, setPendingAdd] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
 
   const loadFloorplans = useCallback(async () => {
     setLoading(true);
@@ -96,6 +98,22 @@ export default function LibraryPage() {
 
   const handleOpenPlan = (plan) => setSelectedPlan(plan);
 
+  const togglePlanSelection = (planId) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(planId)) next.delete(planId);
+      else next.add(planId);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const selectedPlans = useMemo(
+    () => floorplans.filter((plan) => selectedIds.has(plan.id)),
+    [floorplans, selectedIds],
+  );
+
   const selectedPlanFresh = useMemo(
     () => floorplans.find((p) => p.id === selectedPlan?.id) ?? selectedPlan,
     [floorplans, selectedPlan],
@@ -137,7 +155,9 @@ export default function LibraryPage() {
     !loading && !error && floorplans.length > 0 && filteredFloorplans.length === 0;
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div
+      className={`min-h-screen bg-slate-50 ${selectedIds.size > 0 ? "pb-36" : ""}`}
+    >
       <Header
         onAddPlan={handleAddPlanClick}
         userEmail={user?.email}
@@ -182,11 +202,15 @@ export default function LibraryPage() {
                 <FloorplanSeriesSections
                   groups={seriesGroups}
                   onOpenPlan={handleOpenPlan}
+                  selectedIds={selectedIds}
+                  onToggleSelect={togglePlanSelection}
                 />
               ) : (
                 <FloorplanGrid
                   plans={filteredFloorplans}
                   onOpenPlan={handleOpenPlan}
+                  selectedIds={selectedIds}
+                  onToggleSelect={togglePlanSelection}
                 />
               )}
             </>
@@ -212,6 +236,12 @@ export default function LibraryPage() {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         onUploaded={loadFloorplans}
+      />
+
+      <CatalogExportBar
+        selectedCount={selectedIds.size}
+        selectedPlans={selectedPlans}
+        onClearSelection={clearSelection}
       />
 
       {isAdmin ? (

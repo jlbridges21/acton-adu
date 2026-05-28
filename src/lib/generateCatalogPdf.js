@@ -1,0 +1,251 @@
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
+import * as pdfjsLib from "pdfjs-dist";
+import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { formatBaths, formatPrice } from "../utils/filters";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+
+const PAGE_WIDTH = 612;
+const PAGE_HEIGHT = 792;
+const MARGIN = 48;
+const COVER_PATH = "/catalog-cover.png";
+
+async function fetchBytes(url) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Could not load file (${response.status})`);
+  }
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+async function renderPdfPageAsPngBytes(url) {
+  const pdf = await pdfjsLib.getDocument(url).promise;
+  const page = await pdf.getPage(1);
+  const viewport = page.getViewport({ scale: 2 });
+  const canvas = document.createElement("canvas");
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  const context = canvas.getContext("2d");
+  await page.render({ canvasContext: context, viewport }).promise;
+  const dataUrl = canvas.toDataURL("image/png");
+  return fetch(dataUrl).then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b));
+}
+
+async function embedPlanImage(pdfDoc, plan) {
+  if (plan.fileType === "pdf") {
+    const pngBytes = await renderPdfPageAsPngBytes(plan.fileUrl);
+    return pdfDoc.embedPng(pngBytes);
+  }
+
+  const bytes = await fetchBytes(plan.fileUrl);
+  const isPng =
+    bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+  return isPng ? pdfDoc.embedPng(bytes) : pdfDoc.embedJpg(bytes);
+}
+
+function drawCoverPage(page, coverImage, customerName, fonts) {
+  const coverScale = Math.max(
+    PAGE_WIDTH / coverImage.width,
+    PAGE_HEIGHT / coverImage.height,
+  );
+  const coverW = coverImage.width * coverScale;
+  const coverH = coverImage.height * coverScale;
+  const coverX = (PAGE_WIDTH - coverW) / 2;
+  const coverY = (PAGE_HEIGHT - coverH) / 2;
+
+  page.drawImage(coverImage, {
+    x: coverX,
+    y: coverY,
+    width: coverW,
+    height: coverH,
+  });
+
+  const title = `${customerName.trim()} Build Ready Catalogue`;
+  const size = 20;
+  let fontSize = size;
+  let textWidth = fonts.bold.widthOfTextAtSize(title, fontSize);
+  const maxWidth = PAGE_WIDTH - 80;
+
+  while (textWidth > maxWidth && fontSize > 12) {
+    fontSize -= 1;
+    textWidth = fonts.bold.widthOfTextAtSize(title, fontSize);
+  }
+
+  page.drawText(title, {
+    x: (PAGE_WIDTH - textWidth) / 2,
+    y: 92,
+    size: fontSize,
+    font: fonts.bold,
+    color: rgb(1, 1, 1),
+  });
+}
+
+async function drawPlanPage(pdfDoc, plan, fonts) {
+  const page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+
+  page.drawRectangle({
+    x: 0,
+    y: 0,
+    width: PAGE_WIDTH,
+    height: PAGE_HEIGHT,
+    color: rgb(0.97, 0.98, 0.99),
+  });
+
+  let cursorY = PAGE_HEIGHT - MARGIN;
+
+  const nameSize = 22;
+  const nameWidth = fonts.bold.widthOfTextAtSize(plan.name, nameSize);
+  page.drawText(plan.name, {
+    x: (PAGE_WIDTH - nameWidth) / 2,
+    y: cursorY - nameSize,
+    size: nameSize,
+    font: fonts.bold,
+    color: rgb(0.12, 0.16, 0.22),
+  });
+  cursorY -= nameSize + 10;
+
+  if (plan.series) {
+    const seriesSize = 12;
+    const seriesWidth = fonts.regular.widthOfTextAtSize(plan.series, seriesSize);
+    page.drawText(plan.series, {
+      x: (PAGE_WIDTH - seriesWidth) / 2,
+      y: cursorY - seriesSize,
+      size: seriesSize,
+      font: fonts.regular,
+      color: rgb(0.42, 0.47, 0.52),
+    });
+    cursorY -= seriesSize + 14;
+  }
+
+  const statsText = `${plan.beds} bed  ·  ${formatBaths(plan.baths)} bath  ·  ${plan.squareFeet?.toLocaleString()} sq ft`;
+  const statsSize = 11;
+  const statsWidth = fonts.regular.widthOfTextAtSize(statsText, statsSize);
+  page.drawText(statsText, {
+    x: (PAGE_WIDTH - statsWidth) / 2,
+    y: cursorY - statsSize,
+    size: statsSize,
+    font: fonts.regular,
+    color: rgb(0.35, 0.4, 0.45),
+  });
+  cursorY -= statsSize + 20;
+
+  const priceBlockHeight = 52;
+  const imageBottom = MARGIN + priceBlockHeight;
+  const availableHeight = cursorY - imageBottom;
+  const availableWidth = PAGE_WIDTH - MARGIN * 2;
+
+  try {
+    const image = await embedPlanImage(pdfDoc, plan);
+    const scale = Math.min(
+      availableWidth / image.width,
+      availableHeight / image.height,
+    );
+    const width = image.width * scale;
+    const height = image.height * scale;
+
+    page.drawImage(image, {
+      x: (PAGE_WIDTH - width) / 2,
+      y: imageBottom + (availableHeight - height) / 2,
+      width,
+      height,
+    });
+  } catch {
+    const fallback = "Floorplan image could not be loaded";
+    const fallbackSize = 12;
+    const fallbackWidth = fonts.regular.widthOfTextAtSize(fallback, fallbackSize);
+    page.drawText(fallback, {
+      x: (PAGE_WIDTH - fallbackWidth) / 2,
+      y: imageBottom + availableHeight / 2,
+      size: fallbackSize,
+      font: fonts.regular,
+      color: rgb(0.5, 0.52, 0.55),
+    });
+  }
+
+  const label = "Base price";
+  const labelSize = 10;
+  const labelWidth = fonts.regular.widthOfTextAtSize(label, labelSize);
+  page.drawText(label, {
+    x: (PAGE_WIDTH - labelWidth) / 2,
+    y: MARGIN + 30,
+    size: labelSize,
+    font: fonts.regular,
+    color: rgb(0.45, 0.5, 0.55),
+  });
+
+  const priceText = formatPrice(plan.basePrice);
+  const priceSize = 28;
+  const priceWidth = fonts.bold.widthOfTextAtSize(priceText, priceSize);
+  page.drawText(priceText, {
+    x: (PAGE_WIDTH - priceWidth) / 2,
+    y: MARGIN,
+    size: priceSize,
+    font: fonts.bold,
+    color: rgb(0.05, 0.35, 0.75),
+  });
+
+  if (plan.preApproved) {
+    const badge = "Pre-approved";
+    const badgeSize = 9;
+    page.drawText(badge, {
+      x: MARGIN,
+      y: PAGE_HEIGHT - MARGIN - 10,
+      size: badgeSize,
+      font: fonts.bold,
+      color: rgb(0.05, 0.55, 0.35),
+    });
+  }
+}
+
+function downloadPdf(bytes, customerName) {
+  const safeName = customerName
+    .trim()
+    .replace(/[^a-zA-Z0-9-_ ]/g, "")
+    .replace(/\s+/g, "-");
+  const filename = `${safeName || "Customer"}-Build-Ready-Catalogue.pdf`;
+
+  const blob = new Blob([bytes], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Builds and downloads a branded PDF catalogue for the selected floorplans.
+ * Cover page uses public/catalog-cover.png with the customer name on the blue strip.
+ * Plan pages are ordered smallest to largest square footage.
+ */
+export async function generateCatalogPdf({ customerName, plans }) {
+  const trimmedName = customerName.trim();
+  if (!trimmedName) {
+    throw new Error("Enter a customer name for the catalogue.");
+  }
+  if (!plans.length) {
+    throw new Error("Select at least one floorplan.");
+  }
+
+  const sortedPlans = [...plans].sort(
+    (a, b) => (a.squareFeet ?? 0) - (b.squareFeet ?? 0),
+  );
+
+  const pdfDoc = await PDFDocument.create();
+  const fonts = {
+    bold: await pdfDoc.embedFont(StandardFonts.HelveticaBold),
+    regular: await pdfDoc.embedFont(StandardFonts.Helvetica),
+  };
+
+  const coverBytes = await fetchBytes(COVER_PATH);
+  const coverImage = await pdfDoc.embedJpg(coverBytes);
+  const coverPage = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  drawCoverPage(coverPage, coverImage, trimmedName, fonts);
+
+  for (const plan of sortedPlans) {
+    await drawPlanPage(pdfDoc, plan, fonts);
+  }
+
+  const pdfBytes = await pdfDoc.save();
+  downloadPdf(pdfBytes, trimmedName);
+}

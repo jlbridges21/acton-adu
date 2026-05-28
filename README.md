@@ -84,6 +84,15 @@ Open `http://localhost:5173` — single page for everyone.
 
 - **Browse** — no login required  
 - **+ Add Plan** — sign in; only `admin` role can upload  
+- **PDF catalogue** — check plans on cards, enter customer name in the footer bar, click **Create PDF**
+
+### PDF catalogue
+
+1. Check one or more floorplan cards (top-left checkbox).
+2. Enter the customer name in the bottom bar.
+3. Click **Create PDF** — downloads a branded catalogue with:
+   - Cover page (`public/catalog-cover.png`) with “{Customer Name} Build Ready Catalogue” on the blue strip
+   - One page per selected plan (smallest → largest sq ft) with image, beds, baths, sq ft, and base price
 
 ## How it works
 

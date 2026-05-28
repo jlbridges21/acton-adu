@@ -83,7 +83,7 @@ export default function FloorplanViewModal({
             Similar floorplans
           </h3>
           <p className="mt-1 text-xs text-slate-500">
-            Same bedroom count or within ±100 sq ft
+            Within ±100 sq ft
           </p>
           <div className="mt-3 flex gap-4 overflow-x-auto pb-2">
             {similar.map((similarPlan) => (

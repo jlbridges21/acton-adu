@@ -3,7 +3,12 @@ import FloorplanGrid from "./FloorplanGrid";
 /**
  * Renders plans grouped under series headings (used when sort is Series A–Z).
  */
-export default function FloorplanSeriesSections({ groups, onOpenPlan }) {
+export default function FloorplanSeriesSections({
+  groups,
+  onOpenPlan,
+  selectedIds,
+  onToggleSelect,
+}) {
   return (
     <div className="space-y-10">
       {groups.map((group) => (
@@ -16,7 +21,12 @@ export default function FloorplanSeriesSections({ groups, onOpenPlan }) {
               {group.plans.length} floorplan{group.plans.length === 1 ? "" : "s"}
             </p>
           </div>
-          <FloorplanGrid plans={group.plans} onOpenPlan={onOpenPlan} />
+          <FloorplanGrid
+            plans={group.plans}
+            onOpenPlan={onOpenPlan}
+            selectedIds={selectedIds}
+            onToggleSelect={onToggleSelect}
+          />
         </section>
       ))}
     </div>
