@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import FloorplanMedia from "./FloorplanMedia";
 import ModalShell from "./ModalShell";
-import { updateFloorplan } from "../lib/floorplans";
+import SeriesSelect from "./SeriesSelect";
+import {
+  deleteFloorplan,
+  replaceFloorplanFile,
+  updateFloorplan,
+} from "../lib/floorplans";
 import { normalizeSeries } from "../utils/filters";
 
 const inputClass =
@@ -9,10 +14,12 @@ const inputClass =
 
 const labelClass = "mb-1 block text-sm font-medium text-slate-700";
 
-export default function FloorplanEditModal({ plan, onClose, onSaved }) {
+export default function FloorplanEditModal({ plan, onClose, onSaved, onDeleted }) {
   const [form, setForm] = useState(null);
+  const [replacementFile, setReplacementFile] = useState(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!plan) return;
@@ -25,6 +32,7 @@ export default function FloorplanEditModal({ plan, onClose, onSaved }) {
       basePrice: String(plan.basePrice ?? ""),
       preApproved: plan.preApproved ?? false,
     });
+    setReplacementFile(null);
     setError("");
   }, [plan]);
 
@@ -70,6 +78,13 @@ export default function FloorplanEditModal({ plan, onClose, onSaved }) {
 
     setSaving(true);
     try {
+      if (replacementFile) {
+        await replaceFloorplanFile(plan.id, {
+          file: replacementFile,
+          previousFilePath: plan.filePath,
+        });
+      }
+
       await updateFloorplan(plan.id, {
         name,
         series,
@@ -85,6 +100,25 @@ export default function FloorplanEditModal({ plan, onClose, onSaved }) {
       setError(err.message || "Could not save changes.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    const confirmed = window.confirm(
+      `Delete "${plan.name}"? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    setDeleting(true);
+    setError("");
+    try {
+      await deleteFloorplan(plan);
+      onDeleted?.(plan.id);
+      onClose();
+    } catch (err) {
+      setError(err.message || "Could not delete floorplan.");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -117,14 +151,10 @@ export default function FloorplanEditModal({ plan, onClose, onSaved }) {
           <label className={labelClass} htmlFor="edit-series">
             Series
           </label>
-          <input
+          <SeriesSelect
             id="edit-series"
-            type="text"
-            required
             value={form.series}
-            onChange={(e) => update("series", e.target.value)}
-            className={inputClass}
-            placeholder="e.g. BR, Studio, Premium"
+            onChange={(value) => update("series", value)}
           />
         </div>
 
@@ -203,27 +233,55 @@ export default function FloorplanEditModal({ plan, onClose, onSaved }) {
           </label>
         </div>
 
+        <div>
+          <label className={labelClass} htmlFor="edit-floorplan-file">
+            Replace floorplan image
+          </label>
+          <input
+            id="edit-floorplan-file"
+            type="file"
+            accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+            onChange={(e) => setReplacementFile(e.target.files?.[0] ?? null)}
+            className="block w-full text-sm text-slate-600 file:mr-4 file:rounded-full file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-blue-700"
+          />
+          {replacementFile && (
+            <p className="mt-1 text-xs text-slate-500">
+              New file: {replacementFile.name} (saved when you click Save changes)
+            </p>
+          )}
+        </div>
+
         {error && (
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
             {error}
           </p>
         )}
 
-        <div className="flex flex-wrap justify-end gap-3 border-t border-slate-200 pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
           <button
             type="button"
-            onClick={onClose}
-            className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            onClick={handleDelete}
+            disabled={saving || deleting}
+            className="rounded-full border border-red-200 px-5 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
           >
-            Cancel
+            {deleting ? "Deleting…" : "Delete plan"}
           </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-          >
-            {saving ? "Saving…" : "Save changes"}
-          </button>
+          <div className="flex flex-wrap justify-end gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving || deleting}
+              className="rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+            >
+              {saving ? "Saving…" : "Save changes"}
+            </button>
+          </div>
         </div>
       </form>
     </ModalShell>

@@ -1,3 +1,5 @@
+import { getDisplayBasePrice } from "../config/pricing";
+
 export const DEFAULT_FILTERS = {
   search: "",
   series: "all",
@@ -14,6 +16,8 @@ export const DEFAULT_SORT = "series";
 export const SORT_OPTIONS = [
   { value: "sqft-desc", label: "Sq ft: largest to smallest" },
   { value: "sqft-asc", label: "Sq ft: smallest to largest" },
+  { value: "price-desc", label: "Price: highest to lowest" },
+  { value: "price-asc", label: "Price: lowest to highest" },
   { value: "series", label: "Series (A–Z)" },
 ];
 
@@ -83,14 +87,20 @@ function matchesSeries(plan, filterSeries) {
  * Order plans for display after filtering.
  * Series sort is case-insensitive; ties break by sq ft then name.
  */
-export function sortFloorplans(floorplans, sortBy = DEFAULT_SORT) {
+export function sortFloorplans(floorplans, sortBy = DEFAULT_SORT, priceRegion) {
   const list = [...floorplans];
+  const displayPrice = (plan) =>
+    getDisplayBasePrice(plan.basePrice, priceRegion, plan.squareFeet);
 
   switch (sortBy) {
     case "sqft-desc":
       return list.sort((a, b) => (b.squareFeet ?? 0) - (a.squareFeet ?? 0));
     case "sqft-asc":
       return list.sort((a, b) => (a.squareFeet ?? 0) - (b.squareFeet ?? 0));
+    case "price-desc":
+      return list.sort((a, b) => displayPrice(b) - displayPrice(a));
+    case "price-asc":
+      return list.sort((a, b) => displayPrice(a) - displayPrice(b));
     case "series":
       return list.sort((a, b) => {
         const bySeries = normalizeSeries(a.series).localeCompare(
@@ -136,7 +146,7 @@ export function groupFloorplansBySeries(floorplans) {
   });
 }
 
-export function filterFloorplans(floorplans, filters) {
+export function filterFloorplans(floorplans, filters, priceRegion) {
   const search = filters.search.trim().toLowerCase();
 
   return floorplans.filter((plan) => {
@@ -150,7 +160,14 @@ export function filterFloorplans(floorplans, filters) {
     ) {
       return false;
     }
-    if (!matchesBasePrice(plan.basePrice, filters.basePrice)) return false;
+    if (
+      !matchesBasePrice(
+        getDisplayBasePrice(plan.basePrice, priceRegion, plan.squareFeet),
+        filters.basePrice,
+      )
+    ) {
+      return false;
+    }
     if (filters.preApproved === "yes" && !plan.preApproved) return false;
     if (filters.preApproved === "no" && plan.preApproved) return false;
     return true;

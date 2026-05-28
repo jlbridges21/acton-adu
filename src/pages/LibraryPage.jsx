@@ -10,7 +10,9 @@ import EmptyState from "../components/EmptyState";
 import AddPlanModal from "../components/AddPlanModal";
 import PermissionModal from "../components/PermissionModal";
 import CatalogExportBar from "../components/CatalogExportBar";
+import CatalogHistoryModal from "../components/CatalogHistoryModal";
 import { useAuth } from "../context/AuthContext";
+import { usePriceRegion } from "../context/PriceRegionContext";
 import { fetchFloorplans } from "../lib/floorplans";
 import {
   DEFAULT_FILTERS,
@@ -24,6 +26,7 @@ import {
 
 export default function LibraryPage() {
   const { user, isAdmin, signOut } = useAuth();
+  const { priceRegion } = usePriceRegion();
 
   const [floorplans, setFloorplans] = useState([]);
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
@@ -35,6 +38,9 @@ export default function LibraryPage() {
   const [permissionOpen, setPermissionOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [catalogCustomerName, setCatalogCustomerName] = useState("");
+  const [catalogHistoryOpen, setCatalogHistoryOpen] = useState(false);
+  const [seriesExpandedKeys, setSeriesExpandedKeys] = useState(() => new Set());
 
   const loadFloorplans = useCallback(async () => {
     setLoading(true);
@@ -59,8 +65,9 @@ export default function LibraryPage() {
   const seriesOptions = useMemo(() => getUniqueSeries(floorplans), [floorplans]);
 
   const filteredFloorplans = useMemo(
-    () => sortFloorplans(filterFloorplans(floorplans, filters), sortBy),
-    [floorplans, filters, sortBy],
+    () =>
+      sortFloorplans(filterFloorplans(floorplans, filters, priceRegion), sortBy, priceRegion),
+    [floorplans, filters, sortBy, priceRegion],
   );
 
   const seriesGroups = useMemo(
@@ -82,7 +89,15 @@ export default function LibraryPage() {
     });
   };
 
-  const clearSelection = () => setSelectedIds(new Set());
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setCatalogCustomerName("");
+  };
+
+  const handleRestoreCatalogSelection = ({ customerName, floorplanIds }) => {
+    setCatalogCustomerName(customerName);
+    setSelectedIds(new Set(floorplanIds));
+  };
 
   const selectedPlans = useMemo(
     () => floorplans.filter((plan) => selectedIds.has(plan.id)),
@@ -102,6 +117,38 @@ export default function LibraryPage() {
     }
   };
 
+  const handlePlanDeleted = (planId) => {
+    setSelectedPlan(null);
+    setSelectedIds((current) => {
+      if (!current.has(planId)) return current;
+      const next = new Set(current);
+      next.delete(planId);
+      return next;
+    });
+    loadFloorplans();
+  };
+
+  const allSeriesExpanded =
+    seriesGroups.length > 0 &&
+    seriesGroups.every((group) => seriesExpandedKeys.has(group.key));
+
+  const toggleSeriesGroup = (key) => {
+    setSeriesExpandedKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleAllSeriesGroups = () => {
+    if (allSeriesExpanded) {
+      setSeriesExpandedKeys(new Set());
+    } else {
+      setSeriesExpandedKeys(new Set(seriesGroups.map((group) => group.key)));
+    }
+  };
+
   const showLibraryEmpty = !loading && !error && floorplans.length === 0;
   const showFilteredEmpty =
     !loading && !error && floorplans.length > 0 && filteredFloorplans.length === 0;
@@ -113,6 +160,7 @@ export default function LibraryPage() {
       <Header
         onAddPlan={handleAddPlanClick}
         showAddPlan
+        onOpenCatalogHistory={() => setCatalogHistoryOpen(true)}
         userEmail={user?.email}
         onSignOut={signOut}
       />
@@ -147,6 +195,18 @@ export default function LibraryPage() {
                 onSortChange={setSortBy}
               />
 
+              {sortBy === "series" && seriesGroups.length > 0 && (
+                <div className="mb-6 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={toggleAllSeriesGroups}
+                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                  >
+                    {allSeriesExpanded ? "Collapse All" : "Expand All"}
+                  </button>
+                </div>
+              )}
+
               {showLibraryEmpty ? (
                 <EmptyState variant="library" />
               ) : showFilteredEmpty ? (
@@ -154,6 +214,8 @@ export default function LibraryPage() {
               ) : sortBy === "series" ? (
                 <FloorplanSeriesSections
                   groups={seriesGroups}
+                  expandedKeys={seriesExpandedKeys}
+                  onToggleGroup={toggleSeriesGroup}
                   onOpenPlan={handleOpenPlan}
                   selectedIds={selectedIds}
                   onToggleSelect={togglePlanSelection}
@@ -182,7 +244,15 @@ export default function LibraryPage() {
       <CatalogExportBar
         selectedCount={selectedIds.size}
         selectedPlans={selectedPlans}
+        customerName={catalogCustomerName}
+        onCustomerNameChange={setCatalogCustomerName}
         onClearSelection={clearSelection}
+      />
+
+      <CatalogHistoryModal
+        open={catalogHistoryOpen}
+        onClose={() => setCatalogHistoryOpen(false)}
+        onRestoreSelection={handleRestoreCatalogSelection}
       />
 
       {isAdmin ? (
@@ -190,6 +260,7 @@ export default function LibraryPage() {
           plan={selectedPlanFresh}
           onClose={() => setSelectedPlan(null)}
           onSaved={loadFloorplans}
+          onDeleted={handlePlanDeleted}
         />
       ) : (
         <FloorplanViewModal

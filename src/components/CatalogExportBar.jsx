@@ -1,14 +1,19 @@
 import { useState } from "react";
+import { usePriceRegion } from "../context/PriceRegionContext";
+import { saveCatalogExport } from "../lib/catalogExports";
 import { generateCatalogPdf } from "../lib/generateCatalogPdf";
 
 export default function CatalogExportBar({
   selectedCount,
   selectedPlans,
+  customerName,
+  onCustomerNameChange,
   onClearSelection,
+  onExportSaved,
 }) {
-  const [customerName, setCustomerName] = useState("");
   const [error, setError] = useState("");
   const [generating, setGenerating] = useState(false);
+  const { priceRegion } = usePriceRegion();
 
   if (selectedCount === 0) return null;
 
@@ -20,7 +25,21 @@ export default function CatalogExportBar({
       await generateCatalogPdf({
         customerName,
         plans: selectedPlans,
+        priceRegion,
       });
+
+      try {
+        await saveCatalogExport({
+          customerName,
+          plans: selectedPlans,
+        });
+        onExportSaved?.();
+      } catch (saveErr) {
+        setError(
+          saveErr.message ||
+            "PDF was created, but your catalogue history could not be saved.",
+        );
+      }
     } catch (err) {
       setError(err.message || "Could not create PDF. Try again.");
     } finally {
@@ -43,7 +62,7 @@ export default function CatalogExportBar({
             type="text"
             value={customerName}
             onChange={(e) => {
-              setCustomerName(e.target.value);
+              onCustomerNameChange(e.target.value);
               setError("");
             }}
             placeholder="e.g. Smith Family"

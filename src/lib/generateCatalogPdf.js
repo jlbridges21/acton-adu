@@ -1,14 +1,18 @@
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { formatBaths, formatPrice } from "../utils/filters";
+import watermarkUrl from "../../public/watermark.png?url";
+import { formatPlanPrice } from "../config/pricing";
+import { formatBaths } from "../utils/filters";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
 const MARGIN = 48;
-const COVER_PATH = "/catalog-cover.png";
+const COVER_PATH = `${import.meta.env.BASE_URL}catalog-cover.png`;
+const WATERMARK_MAX_WIDTH = 100;
+const WATERMARK_MARGIN = 24;
 
 async function fetchBytes(url) {
   const response = await fetch(url);
@@ -87,6 +91,19 @@ async function embedPlanImage(pdfDoc, plan) {
   return embedImageBytes(pdfDoc, bytes);
 }
 
+function drawWatermark(page, watermarkImage) {
+  const scale = WATERMARK_MAX_WIDTH / watermarkImage.width;
+  const width = watermarkImage.width * scale;
+  const height = watermarkImage.height * scale;
+
+  page.drawImage(watermarkImage, {
+    x: WATERMARK_MARGIN,
+    y: PAGE_HEIGHT - WATERMARK_MARGIN - height,
+    width,
+    height,
+  });
+}
+
 function drawCoverPage(page, coverImage, customerName, fonts) {
   const coverScale = Math.max(
     PAGE_WIDTH / coverImage.width,
@@ -124,7 +141,7 @@ function drawCoverPage(page, coverImage, customerName, fonts) {
   });
 }
 
-async function drawPlanPage(pdfDoc, plan, fonts) {
+async function drawPlanPage(pdfDoc, plan, fonts, watermarkImage, priceRegion) {
   const page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
 
   page.drawRectangle({
@@ -217,7 +234,7 @@ async function drawPlanPage(pdfDoc, plan, fonts) {
     color: rgb(0.45, 0.5, 0.55),
   });
 
-  const priceText = formatPrice(plan.basePrice);
+  const priceText = formatPlanPrice(plan, priceRegion);
   const priceSize = 28;
   const priceWidth = fonts.bold.widthOfTextAtSize(priceText, priceSize);
   page.drawText(priceText, {
@@ -238,6 +255,10 @@ async function drawPlanPage(pdfDoc, plan, fonts) {
       font: fonts.bold,
       color: rgb(0.05, 0.55, 0.35),
     });
+  }
+
+  if (watermarkImage) {
+    drawWatermark(page, watermarkImage);
   }
 }
 
@@ -262,7 +283,7 @@ function downloadPdf(bytes, customerName) {
  * Cover page uses public/catalog-cover.png with the customer name on the blue strip.
  * Plan pages are ordered smallest to largest square footage.
  */
-export async function generateCatalogPdf({ customerName, plans }) {
+export async function generateCatalogPdf({ customerName, plans, priceRegion }) {
   const trimmedName = customerName.trim();
   if (!trimmedName) {
     throw new Error("Enter a customer name for the catalogue.");
@@ -286,8 +307,16 @@ export async function generateCatalogPdf({ customerName, plans }) {
   const coverPage = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
   drawCoverPage(coverPage, coverImage, trimmedName, fonts);
 
+  let watermarkImage = null;
+  try {
+    const watermarkBytes = await fetchBytes(watermarkUrl);
+    watermarkImage = await embedImageBytes(pdfDoc, watermarkBytes);
+  } catch (err) {
+    console.warn("Catalog watermark could not be loaded.", err);
+  }
+
   for (const plan of sortedPlans) {
-    await drawPlanPage(pdfDoc, plan, fonts);
+    await drawPlanPage(pdfDoc, plan, fonts, watermarkImage, priceRegion);
   }
 
   const pdfBytes = await pdfDoc.save();

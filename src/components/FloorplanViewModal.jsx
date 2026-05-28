@@ -1,7 +1,9 @@
 import FloorplanCard from "./FloorplanCard";
 import FloorplanMedia from "./FloorplanMedia";
 import ModalShell from "./ModalShell";
-import { formatBaths, formatPrice } from "../utils/filters";
+import { formatPlanPrice } from "../config/pricing";
+import { usePriceRegion } from "../context/PriceRegionContext";
+import { formatBaths } from "../utils/filters";
 import { getSimilarFloorplans } from "../utils/similarFloorplans";
 
 export default function FloorplanViewModal({
@@ -10,6 +12,8 @@ export default function FloorplanViewModal({
   onClose,
   onOpenPlan,
 }) {
+  const { priceRegion } = usePriceRegion();
+
   if (!plan) return null;
 
   const similar = getSimilarFloorplans(plan, allPlans);
@@ -58,7 +62,7 @@ export default function FloorplanViewModal({
             Base price
           </dt>
           <dd className="mt-0.5 text-base font-semibold text-slate-900">
-            {formatPrice(plan.basePrice)}
+            {formatPlanPrice(plan, priceRegion)}
           </dd>
         </div>
         <div>

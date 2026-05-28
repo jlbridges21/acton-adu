@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { formatBaths, formatPrice } from "../utils/filters";
+import { formatPlanPrice } from "../config/pricing";
+import { usePriceRegion } from "../context/PriceRegionContext";
+import { formatBaths } from "../utils/filters";
 
 function ImagePreview({ plan }) {
   const [hasError, setHasError] = useState(false);
@@ -47,6 +49,8 @@ export default function FloorplanCard({
   selected = false,
   onToggleSelect,
 }) {
+  const { priceRegion } = usePriceRegion();
+
   return (
     <article
       className={`group flex h-full flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
@@ -95,7 +99,7 @@ export default function FloorplanCard({
           </div>
           <div>
             <dt className="text-xs uppercase tracking-wide text-slate-400">Base Price</dt>
-            <dd className="font-medium text-slate-800">{formatPrice(plan.basePrice)}</dd>
+            <dd className="font-medium text-slate-800">{formatPlanPrice(plan, priceRegion)}</dd>
           </div>
           <div>
             <dt className="text-xs uppercase tracking-wide text-slate-400">Bedrooms</dt>

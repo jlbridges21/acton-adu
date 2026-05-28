@@ -2,12 +2,22 @@ export default function Header({
   badge = "Floorplan Library",
   onAddPlan,
   showAddPlan = false,
+  onOpenCatalogHistory,
   userEmail,
   onSignOut,
 }) {
   return (
     <header className="relative border-b border-slate-200 bg-white px-4 py-10 sm:px-6 lg:px-8">
       <div className="absolute right-4 top-4 flex flex-col items-end gap-2 sm:right-6 lg:right-8">
+        {onOpenCatalogHistory && (
+          <button
+            type="button"
+            onClick={onOpenCatalogHistory}
+            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+          >
+            My Catalogues
+          </button>
+        )}
         {showAddPlan && onAddPlan && (
           <button
             type="button"

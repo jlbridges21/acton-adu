@@ -128,3 +128,79 @@ export async function updateFloorplan(id, plan) {
     throw new Error(error.message || "Failed to update floorplan.");
   }
 }
+
+async function removeStorageFile(filePath) {
+  if (!filePath) return;
+  const { error } = await supabase.storage.from(BUCKET).remove([filePath]);
+  if (error) {
+    console.warn("Could not remove old floorplan file:", error.message);
+  }
+}
+
+/**
+ * Replace the floorplan file in Storage and update metadata (admins only).
+ */
+export async function replaceFloorplanFile(id, { file, previousFilePath }) {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const fileType = getFileTypeFromMime(file.type);
+  if (!fileType) {
+    throw new Error("Unsupported file type. Use JPEG, PNG, or PDF.");
+  }
+
+  const filePath = `${Date.now()}-${sanitizeFileName(file.name)}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(BUCKET)
+    .upload(filePath, file, { cacheControl: "3600", upsert: false });
+
+  if (uploadError) {
+    throw new Error(uploadError.message || "Failed to upload file to storage.");
+  }
+
+  const { data: publicUrlData } = supabase.storage
+    .from(BUCKET)
+    .getPublicUrl(filePath);
+
+  const { error: updateError } = await supabase
+    .from("floorplans")
+    .update({
+      file_type: fileType,
+      file_url: publicUrlData.publicUrl,
+      file_path: filePath,
+    })
+    .eq("id", id);
+
+  if (updateError) {
+    await removeStorageFile(filePath);
+    throw new Error(updateError.message || "Failed to update floorplan file.");
+  }
+
+  if (previousFilePath && previousFilePath !== filePath) {
+    await removeStorageFile(previousFilePath);
+  }
+
+  return { fileUrl: publicUrlData.publicUrl, filePath, fileType };
+}
+
+/**
+ * Delete a floorplan row and its storage file (admins only).
+ */
+export async function deleteFloorplan(plan) {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const { error: deleteError } = await supabase
+    .from("floorplans")
+    .delete()
+    .eq("id", plan.id);
+
+  if (deleteError) {
+    throw new Error(deleteError.message || "Failed to delete floorplan.");
+  }
+
+  await removeStorageFile(plan.filePath);
+}

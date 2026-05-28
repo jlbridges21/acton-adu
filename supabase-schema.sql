@@ -90,6 +90,41 @@ create policy "Admins can update floorplans"
   using (public.is_admin())
   with check (public.is_admin());
 
+create policy "Admins can delete floorplans"
+  on floorplans for delete
+  to authenticated
+  using (public.is_admin());
+
+-- Saved PDF catalogues per user
+create table catalog_exports (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamp with time zone default now(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  customer_name text not null,
+  floorplan_ids uuid[] not null default '{}',
+  floorplans_snapshot jsonb not null default '[]'::jsonb
+);
+
+create index catalog_exports_user_id_idx on catalog_exports (user_id);
+
+-- ---------- RLS: catalog_exports ----------
+alter table catalog_exports enable row level security;
+
+create policy "Users can view own catalog exports"
+  on catalog_exports for select
+  to authenticated
+  using (auth.uid() = user_id and public.can_view_floorplans());
+
+create policy "Users can create own catalog exports"
+  on catalog_exports for insert
+  to authenticated
+  with check (auth.uid() = user_id and public.can_view_floorplans());
+
+create policy "Users can delete own catalog exports"
+  on catalog_exports for delete
+  to authenticated
+  using (auth.uid() = user_id and public.can_view_floorplans());
+
 -- ---------- RLS: profiles ----------
 alter table profiles enable row level security;
 
@@ -108,3 +143,8 @@ create policy "Users can read own profile"
 -- on storage.objects for insert
 -- to authenticated
 -- with check (bucket_id = 'floorplans' and public.is_admin());
+--
+-- create policy "Admins can delete floorplan files"
+-- on storage.objects for delete
+-- to authenticated
+-- using (bucket_id = 'floorplans' and public.is_admin());
