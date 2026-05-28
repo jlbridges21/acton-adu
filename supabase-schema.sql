@@ -17,11 +17,11 @@ create table floorplans (
   file_path text
 );
 
--- User roles: you assign admin manually in Supabase (see README).
+-- Roles: user (no library access), acton (browse/export), admin (full access).
 create table profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   email text,
-  role text not null default 'user' check (role in ('user', 'admin')),
+  role text not null default 'user' check (role in ('user', 'acton', 'admin')),
   created_at timestamp with time zone default now()
 );
 
@@ -57,12 +57,27 @@ as $$
   );
 $$;
 
+-- Helper for RLS: acton or admin can browse floorplans.
+create or replace function public.can_view_floorplans()
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.profiles
+    where id = auth.uid() and role in ('acton', 'admin')
+  );
+$$;
+
 -- ---------- RLS: floorplans ----------
 alter table floorplans enable row level security;
 
-create policy "Anyone can view floorplans"
+create policy "Acton and admin can view floorplans"
   on floorplans for select
-  using (true);
+  to authenticated
+  using (public.can_view_floorplans());
 
 create policy "Admins can insert floorplans"
   on floorplans for insert
@@ -84,9 +99,10 @@ create policy "Users can read own profile"
   using (auth.uid() = id);
 
 -- ---------- Storage policies (run after creating public bucket "floorplans") ----------
--- create policy "Anyone can read floorplan files"
+-- create policy "Acton and admin can read floorplan files"
 -- on storage.objects for select
--- using (bucket_id = 'floorplans');
+-- to authenticated
+-- using (bucket_id = 'floorplans' and public.can_view_floorplans());
 --
 -- create policy "Admins can upload floorplan files"
 -- on storage.objects for insert

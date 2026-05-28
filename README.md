@@ -1,6 +1,23 @@
 # Acton BR Library
 
-Public floorplan library for Acton ADU plans. Anyone with the URL can browse. Only **admin** users (assigned in Supabase) can upload new plans after signing in.
+Internal Acton ADU floorplan library. Users must sign in; only **acton** and **admin** roles can view plans. **Admin** can upload and edit.
+
+## Roles
+
+| Role | Access |
+|------|--------|
+| `user` | Signed in only — no floorplans (default for new accounts) |
+| `acton` | Browse, filter, export PDF catalogues |
+| `admin` | Everything acton can do, plus upload and edit |
+
+Grant access in Supabase SQL:
+
+```sql
+update public.profiles set role = 'acton' where email = 'sales@acton.com';
+update public.profiles set role = 'admin' where email = 'admin@acton.com';
+```
+
+**Existing projects:** run `supabase-migration-acton-role.sql` in the SQL Editor (run the **whole** script). If you only need to fix the role constraint error, run `supabase-fix-role-constraint.sql` first, then assign roles.
 
 ## Tech stack
 
@@ -15,95 +32,35 @@ Create a project at [supabase.com](https://supabase.com). Copy **Project URL** a
 
 ### 2. Database
 
-Run `supabase-schema.sql` in the **SQL Editor**. This creates:
-
-- `floorplans` — plan metadata (public read)
-- `profiles` — one row per user with `role` (`user` or `admin`)
-- RLS so only admins can insert floorplans
+Run `supabase-schema.sql` in the **SQL Editor**.
 
 ### 3. Auth
 
-In **Authentication → Providers**, enable **Email** (password sign-in).
-
-Optional: disable “Confirm email” for faster internal testing.
+Enable **Email** under **Authentication → Providers**.
 
 ### 4. Storage
 
-1. Create a **public** bucket named `floorplans`.
-2. Add storage policies from the bottom of `supabase-schema.sql` (public read, admin-only upload).
+Create a **public** bucket named `floorplans` and apply storage policies from `supabase-schema.sql` (acton/admin read, admin upload).
 
-### 5. Grant admin access (manual)
-
-When someone should upload plans, promote them in SQL:
-
-```sql
-update public.profiles
-set role = 'admin'
-where email = 'teammember@acton.com';
-```
-
-New sign-ups default to `user` (browse only).
-
-**Existing projects:** add the `series` column:
-
-```sql
-alter table floorplans add column if not exists series text;
-```
-
-(See `supabase-migration-series.sql`.)
-
-**Existing projects:** if the table already exists, run only the new policy:
-
-```sql
-create policy "Admins can update floorplans"
-  on floorplans for update
-  to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
-```
-
-### 6. Environment variables
+### 5. Environment variables
 
 ```bash
 cp .env.example .env
 ```
 
-```
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your_anon_key
-```
-
-### 7. Run
+### 6. Run
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` — single page for everyone.
+## Features
 
-- **Browse** — no login required  
-- **+ Add Plan** — sign in; only `admin` role can upload  
-- **PDF catalogue** — check plans on cards, enter customer name in the footer bar, click **Create PDF**
-
-### PDF catalogue
-
-1. Check one or more floorplan cards (top-left checkbox).
-2. Enter the customer name in the bottom bar.
-3. Click **Create PDF** — downloads a branded catalogue with:
-   - Cover page (`public/catalog-cover.png`) with “{Customer Name} Build Ready Catalogue” on the blue strip
-   - One page per selected plan (smallest → largest sq ft) with image, beds, baths, sq ft, and base price
-
-## How it works
-
-| File | Purpose |
-|------|---------|
-| `src/lib/supabaseClient.js` | Supabase connection |
-| `src/context/AuthContext.jsx` | Sign in/up, session, reads `profiles.role` |
-| `src/pages/LibraryPage.jsx` | Public library + Add Plan flow |
-| `src/components/LoginModal.jsx` | Login when adding a plan |
-| `src/components/AddPlanModal.jsx` | Upload form (admins only) |
-| `src/lib/floorplans.js` | Fetch plans / upload to Storage + table |
+- Sign in / create account required before any library content
+- Filter, sort, and open floorplans (acton + admin)
+- PDF catalogue export with customer name (acton + admin)
+- Upload and edit plans (admin only)
 
 ## Build
 

@@ -18,6 +18,52 @@ async function fetchBytes(url) {
   return new Uint8Array(await response.arrayBuffer());
 }
 
+/** Detect format from file magic bytes (not URL extension). */
+function detectImageFormat(bytes) {
+  if (bytes.length >= 4 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e) {
+    return "png";
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+    return "jpeg";
+  }
+  return "unknown";
+}
+
+function loadImageElement(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Image could not be decoded"));
+    img.src = src;
+  });
+}
+
+/** Decode any browser-supported image and embed as PNG in the PDF. */
+async function embedViaCanvas(pdfDoc, bytes) {
+  const blob = new Blob([bytes]);
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const img = await loadImageElement(objectUrl);
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    canvas.getContext("2d").drawImage(img, 0, 0);
+    const pngBuffer = await fetch(canvas.toDataURL("image/png"))
+      .then((r) => r.arrayBuffer());
+    return pdfDoc.embedPng(new Uint8Array(pngBuffer));
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function embedImageBytes(pdfDoc, bytes) {
+  const format = detectImageFormat(bytes);
+  if (format === "png") return pdfDoc.embedPng(bytes);
+  if (format === "jpeg") return pdfDoc.embedJpg(bytes);
+  return embedViaCanvas(pdfDoc, bytes);
+}
+
 async function renderPdfPageAsPngBytes(url) {
   const pdf = await pdfjsLib.getDocument(url).promise;
   const page = await pdf.getPage(1);
@@ -38,9 +84,7 @@ async function embedPlanImage(pdfDoc, plan) {
   }
 
   const bytes = await fetchBytes(plan.fileUrl);
-  const isPng =
-    bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
-  return isPng ? pdfDoc.embedPng(bytes) : pdfDoc.embedJpg(bytes);
+  return embedImageBytes(pdfDoc, bytes);
 }
 
 function drawCoverPage(page, coverImage, customerName, fonts) {
@@ -238,7 +282,7 @@ export async function generateCatalogPdf({ customerName, plans }) {
   };
 
   const coverBytes = await fetchBytes(COVER_PATH);
-  const coverImage = await pdfDoc.embedJpg(coverBytes);
+  const coverImage = await embedImageBytes(pdfDoc, coverBytes);
   const coverPage = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
   drawCoverPage(coverPage, coverImage, trimmedName, fonts);
 

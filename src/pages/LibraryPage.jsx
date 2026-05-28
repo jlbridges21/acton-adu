@@ -7,7 +7,6 @@ import FloorplanSeriesSections from "../components/FloorplanSeriesSections";
 import FloorplanViewModal from "../components/FloorplanViewModal";
 import FloorplanEditModal from "../components/FloorplanEditModal";
 import EmptyState from "../components/EmptyState";
-import LoginModal from "../components/LoginModal";
 import AddPlanModal from "../components/AddPlanModal";
 import PermissionModal from "../components/PermissionModal";
 import CatalogExportBar from "../components/CatalogExportBar";
@@ -24,15 +23,7 @@ import {
 } from "../utils/filters";
 
 export default function LibraryPage() {
-  const {
-    user,
-    isAdmin,
-    loading: authLoading,
-    signIn,
-    signUp,
-    signOut,
-    refreshProfile,
-  } = useAuth();
+  const { user, isAdmin, signOut } = useAuth();
 
   const [floorplans, setFloorplans] = useState([]);
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
@@ -40,10 +31,8 @@ export default function LibraryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const [loginOpen, setLoginOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [permissionOpen, setPermissionOpen] = useState(false);
-  const [pendingAdd, setPendingAdd] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
 
@@ -56,7 +45,7 @@ export default function LibraryPage() {
     } catch (err) {
       setError(
         err.message ||
-          "Could not load floorplans. Check your Supabase connection and try again.",
+          "Could not load floorplans. Check your Supabase connection and role access.",
       );
     } finally {
       setLoading(false);
@@ -66,20 +55,6 @@ export default function LibraryPage() {
   useEffect(() => {
     loadFloorplans();
   }, [loadFloorplans]);
-
-  // After login, open upload if user is admin (otherwise show permission message).
-  useEffect(() => {
-    if (!pendingAdd || authLoading || !user) return;
-
-    setPendingAdd(false);
-    setLoginOpen(false);
-
-    if (isAdmin) {
-      setAddOpen(true);
-    } else {
-      setPermissionOpen(true);
-    }
-  }, [pendingAdd, authLoading, user, isAdmin]);
 
   const seriesOptions = useMemo(() => getUniqueSeries(floorplans), [floorplans]);
 
@@ -120,33 +95,10 @@ export default function LibraryPage() {
   );
 
   const handleAddPlanClick = () => {
-    if (authLoading) return;
-
-    if (!user) {
-      setPendingAdd(true);
-      setLoginOpen(true);
-      return;
-    }
-
-    if (!isAdmin) {
+    if (isAdmin) {
+      setAddOpen(true);
+    } else {
       setPermissionOpen(true);
-      return;
-    }
-
-    setAddOpen(true);
-  };
-
-  const handleLogin = async ({ mode, email, password }) => {
-    if (mode === "signUp") {
-      await signUp(email, password);
-      return;
-    }
-
-    await signIn(email, password);
-    await refreshProfile();
-
-    if (!pendingAdd) {
-      setLoginOpen(false);
     }
   };
 
@@ -160,8 +112,9 @@ export default function LibraryPage() {
     >
       <Header
         onAddPlan={handleAddPlanClick}
+        showAddPlan
         userEmail={user?.email}
-        onSignOut={user ? signOut : undefined}
+        onSignOut={signOut}
       />
 
       <FilterBar
@@ -218,19 +171,7 @@ export default function LibraryPage() {
         </div>
       </main>
 
-      <LoginModal
-        open={loginOpen}
-        onClose={() => {
-          setLoginOpen(false);
-          setPendingAdd(false);
-        }}
-        onSuccess={handleLogin}
-      />
-
-      <PermissionModal
-        open={permissionOpen}
-        onClose={() => setPermissionOpen(false)}
-      />
+      <PermissionModal open={permissionOpen} onClose={() => setPermissionOpen(false)} />
 
       <AddPlanModal
         open={addOpen}
