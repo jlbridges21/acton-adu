@@ -2,8 +2,11 @@ import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import watermarkUrl from "../../public/watermark.png?url";
+import { fetchEndTemplatePdfBytes } from "./catalogAssets";
 import { formatPlanPrice } from "../config/pricing";
 import { formatBaths } from "../utils/filters";
+
+const CATALOG_DOWNLOAD_FILENAME = "Acton-ADU-Selected-Floorplans.pdf";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -262,20 +265,32 @@ async function drawPlanPage(pdfDoc, plan, fonts, watermarkImage, priceRegion) {
   }
 }
 
-function downloadPdf(bytes, customerName) {
-  const safeName = customerName
-    .trim()
-    .replace(/[^a-zA-Z0-9-_ ]/g, "")
-    .replace(/\s+/g, "-");
-  const filename = `${safeName || "Customer"}-Build-Ready-Catalogue.pdf`;
-
+function downloadPdf(bytes) {
   const blob = new Blob([bytes], { type: "application/pdf" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = filename;
+  link.download = CATALOG_DOWNLOAD_FILENAME;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+async function appendEndTemplate(pdfDoc) {
+  const templateBytes = await fetchEndTemplatePdfBytes();
+
+  let templateDoc;
+  try {
+    templateDoc = await PDFDocument.load(templateBytes);
+  } catch {
+    throw new Error("The package examples PDF could not be parsed.");
+  }
+
+  const pageIndices = templateDoc.getPageIndices();
+  const copiedPages = await pdfDoc.copyPages(templateDoc, pageIndices);
+
+  for (const page of copiedPages) {
+    pdfDoc.addPage(page);
+  }
 }
 
 /**
@@ -283,7 +298,12 @@ function downloadPdf(bytes, customerName) {
  * Cover page uses public/catalog-cover.png with the customer name on the blue strip.
  * Plan pages are ordered smallest to largest square footage.
  */
-export async function generateCatalogPdf({ customerName, plans, priceRegion }) {
+export async function generateCatalogPdf({
+  customerName,
+  plans,
+  priceRegion,
+  includePackageExamples = false,
+}) {
   const trimmedName = customerName.trim();
   if (!trimmedName) {
     throw new Error("Enter a customer name for the catalogue.");
@@ -319,6 +339,17 @@ export async function generateCatalogPdf({ customerName, plans, priceRegion }) {
     await drawPlanPage(pdfDoc, plan, fonts, watermarkImage, priceRegion);
   }
 
+  if (includePackageExamples) {
+    try {
+      await appendEndTemplate(pdfDoc);
+    } catch (err) {
+      throw new Error(
+        err.message ||
+          "Could not append the package examples PDF. Try again or export without package examples.",
+      );
+    }
+  }
+
   const pdfBytes = await pdfDoc.save();
-  downloadPdf(pdfBytes, trimmedName);
+  downloadPdf(pdfBytes);
 }
