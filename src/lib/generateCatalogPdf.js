@@ -6,8 +6,6 @@ import { fetchEndTemplatePdfBytes } from "./catalogAssets";
 import { formatPlanPrice } from "../config/pricing";
 import { formatBaths } from "../utils/filters";
 
-const CATALOG_FILENAME_SUFFIX = "Acton-ADU-BR-Catalogue.pdf";
-
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 const PAGE_WIDTH = 612;
@@ -270,7 +268,7 @@ function downloadPdf(bytes, customerName) {
     .trim()
     .replace(/[^a-zA-Z0-9-_ ]/g, "")
     .replace(/\s+/g, "-");
-  const filename = `${safeName || "Customer"}-${CATALOG_FILENAME_SUFFIX}`;
+  const filename = `${safeName || "Customer"}.pdf`;
 
   const blob = new Blob([bytes], { type: "application/pdf" });
   const url = URL.createObjectURL(blob);
