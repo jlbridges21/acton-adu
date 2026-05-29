@@ -266,9 +266,10 @@ async function drawPlanPage(pdfDoc, plan, fonts, watermarkImage, priceRegion) {
 function downloadPdf(bytes, customerName) {
   const safeName = customerName
     .trim()
-    .replace(/[^a-zA-Z0-9-_ ]/g, "")
-    .replace(/\s+/g, "-");
-  const filename = `${safeName || "Customer"}.pdf`;
+    .replace(/[\\/:*?"<>|]/g, "")
+    .replace(/\s+/g, " ");
+  const name = safeName || "Customer";
+  const filename = `${name} - Acton ADU - BR Catalogue.pdf`;
 
   const blob = new Blob([bytes], { type: "application/pdf" });
   const url = URL.createObjectURL(blob);
