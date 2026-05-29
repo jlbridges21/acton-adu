@@ -6,7 +6,7 @@ import { fetchEndTemplatePdfBytes } from "./catalogAssets";
 import { formatPlanPrice } from "../config/pricing";
 import { formatBaths } from "../utils/filters";
 
-const CATALOG_DOWNLOAD_FILENAME = "Acton-ADU-Selected-Floorplans.pdf";
+const CATALOG_FILENAME_SUFFIX = "Acton-ADU-BR-Catalogue.pdf";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -265,12 +265,18 @@ async function drawPlanPage(pdfDoc, plan, fonts, watermarkImage, priceRegion) {
   }
 }
 
-function downloadPdf(bytes) {
+function downloadPdf(bytes, customerName) {
+  const safeName = customerName
+    .trim()
+    .replace(/[^a-zA-Z0-9-_ ]/g, "")
+    .replace(/\s+/g, "-");
+  const filename = `${safeName || "Customer"}-${CATALOG_FILENAME_SUFFIX}`;
+
   const blob = new Blob([bytes], { type: "application/pdf" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = CATALOG_DOWNLOAD_FILENAME;
+  link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -351,5 +357,5 @@ export async function generateCatalogPdf({
   }
 
   const pdfBytes = await pdfDoc.save();
-  downloadPdf(pdfBytes);
+  downloadPdf(pdfBytes, trimmedName);
 }
