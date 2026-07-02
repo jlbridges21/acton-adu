@@ -1,4 +1,6 @@
 const COMPRESS_URL = (import.meta.env.VITE_COMPRESS_API_URL || "").trim();
+const COMPRESS_MIN_MB = Number(import.meta.env.VITE_COMPRESS_MIN_MB || 12);
+const COMPRESS_DPI = Number(import.meta.env.VITE_COMPRESS_DPI || 300);
 
 /**
  * Send a generated PDF to the Acton PDF Compressor API on Render.
@@ -14,6 +16,8 @@ export async function compressPdf(pdfBlob) {
   try {
     const formData = new FormData();
     formData.append("file", pdfBlob, "presentation.pdf");
+    formData.append("minMb", String(COMPRESS_MIN_MB));
+    formData.append("dpi", String(COMPRESS_DPI));
 
     const response = await fetch(COMPRESS_URL, {
       method: "POST",

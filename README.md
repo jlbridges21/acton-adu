@@ -117,7 +117,7 @@ Restart `npm run dev` after changing env vars.
 
 1. The app builds the PDF in the browser
 2. Compression runs **only when the user checks “Compress PDF”** in the export panel (unchecked by default)
-3. If checked and `VITE_COMPRESS_API_URL` is set, the PDF is posted to Render as `FormData` field `file`
+3. If checked and `VITE_COMPRESS_API_URL` is set, the PDF is posted to Render as `FormData` field `file` with `minMb` (default **12**) and `dpi` (default **300**)
 4. The compressed PDF is used for download and share links when compression succeeds
 5. If compression fails or is not configured, the original PDF is used instead
 

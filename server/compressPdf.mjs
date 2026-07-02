@@ -18,6 +18,7 @@ function runGhostscript(inputPath, outputPath, preset) {
       "-sDEVICE=pdfwrite",
       "-dCompatibilityLevel=1.4",
       `-dPDFSETTINGS=${preset}`,
+      "-r300",
       "-dNOPAUSE",
       "-dQUIET",
       "-dBATCH",
@@ -53,7 +54,7 @@ function runGhostscript(inputPath, outputPath, preset) {
 
 /**
  * Compress a PDF buffer with Ghostscript.
- * Tries /ebook first, then /screen if the result is still over 20 MB.
+ * Tries /ebook first, then /screen if the result is still over 12 MB.
  */
 export async function compressPdfBuffer(inputBytes) {
   const id = randomUUID();
@@ -69,7 +70,7 @@ export async function compressPdfBuffer(inputBytes) {
     let preset = "ebook";
 
     const ebookSizeMb = outputBytes.length / (1024 * 1024);
-    if (ebookSizeMb > 20) {
+    if (ebookSizeMb > 12) {
       await runGhostscript(inputPath, screenOutputPath, QUALITY_PRESETS.screen);
       outputBytes = await readFile(screenOutputPath);
       preset = "screen";
