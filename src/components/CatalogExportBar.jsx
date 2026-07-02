@@ -17,13 +17,14 @@ export default function CatalogExportBar({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [generating, setGenerating] = useState(false);
-  const [isCompressing, setIsCompressing] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
   const [includePackageExamples, setIncludePackageExamples] = useState(false);
   const [createShareableLink, setCreateShareableLink] = useState(false);
   const [compressPdfEnabled, setCompressPdfEnabled] = useState(false);
   const [shareUrl, setShareUrl] = useState("");
   const [copyFeedback, setCopyFeedback] = useState("");
-  const [finalSizeMb, setFinalSizeMb] = useState(null);
+  const [optimizationDetails, setOptimizationDetails] = useState("");
+  const [optimizationWarning, setOptimizationWarning] = useState("");
   const { priceRegion } = usePriceRegion();
 
   if (selectedCount === 0) return null;
@@ -48,7 +49,8 @@ export default function CatalogExportBar({
     setNotice("");
     setCopyFeedback("");
     setShareUrl("");
-    setFinalSizeMb(null);
+    setOptimizationDetails("");
+    setOptimizationWarning("");
     setGenerating(true);
 
     try {
@@ -64,14 +66,15 @@ export default function CatalogExportBar({
       let fileSizeMb = pdfBytes.length / (1024 * 1024);
 
       if (compressPdfEnabled) {
-        setIsCompressing(true);
-        setNotice("Compressing PDF for email…");
+        setIsOptimizing(true);
+        setNotice("Optimizing PDF for email…");
         const compression = await compressCatalogPdf(pdfBytes);
-        setIsCompressing(false);
+        setIsOptimizing(false);
         finalBytes = compression.bytes;
         compressed = compression.compressed;
         fileSizeMb = compression.sizeMb;
-        setFinalSizeMb(compression.sizeMb);
+        setOptimizationDetails(compression.details || "");
+        setOptimizationWarning(compression.apiWarning || "");
 
         if (compression.warning) {
           setNotice(compression.warning);
@@ -116,7 +119,7 @@ export default function CatalogExportBar({
       setError(err.message || "Could not create PDF. Try again.");
     } finally {
       setGenerating(false);
-      setIsCompressing(false);
+      setIsOptimizing(false);
     }
   };
 
@@ -183,7 +186,8 @@ export default function CatalogExportBar({
                 setCompressPdfEnabled(e.target.checked);
                 setError("");
                 setNotice("");
-                setFinalSizeMb(null);
+                setOptimizationDetails("");
+                setOptimizationWarning("");
               }}
               disabled={generating}
               className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
@@ -191,15 +195,33 @@ export default function CatalogExportBar({
             <span className="text-sm text-slate-700">
               <span className="block font-medium">Compress PDF</span>
               <span className="mt-0.5 block text-xs text-slate-500">
-                Creates a smaller email-friendly file, but may take longer and slightly reduce
-                image quality.
+                Optimizes the file for email by aiming for the best quality under 20 MB.
               </span>
             </span>
           </label>
 
-          {finalSizeMb != null && (
-            <p className="mt-2 text-xs text-slate-500">
-              Final PDF size: {finalSizeMb.toFixed(1)} MB
+          {notice && (
+            <p
+              className={`mt-2 text-sm ${
+                notice.includes("failed") || notice.includes("not configured")
+                  ? "text-amber-700"
+                  : "text-emerald-700"
+              }`}
+              role="status"
+            >
+              {notice}
+            </p>
+          )}
+
+          {optimizationDetails && (
+            <p className="mt-1 text-xs text-slate-500" role="status">
+              {optimizationDetails}
+            </p>
+          )}
+
+          {optimizationWarning && (
+            <p className="mt-1 text-xs text-amber-700" role="status">
+              {optimizationWarning}
             </p>
           )}
 
@@ -234,19 +256,6 @@ export default function CatalogExportBar({
             </div>
           )}
 
-          {notice && (
-            <p
-              className={`mt-2 text-sm ${
-                notice.includes("failed") || notice.includes("not configured")
-                  ? "text-amber-700"
-                  : "text-emerald-700"
-              }`}
-              role="status"
-            >
-              {notice}
-            </p>
-          )}
-
           {error && (
             <p className="mt-2 text-sm text-red-600" role="alert">
               {error}
@@ -269,8 +278,8 @@ export default function CatalogExportBar({
             className="rounded-full bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-60"
           >
             {generating
-              ? isCompressing
-                ? "Compressing PDF for email…"
+              ? isOptimizing
+                ? "Optimizing PDF for email…"
                 : includePackageExamples
                   ? "Creating combined PDF…"
                   : "Creating PDF…"

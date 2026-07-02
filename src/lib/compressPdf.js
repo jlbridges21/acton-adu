@@ -2,10 +2,14 @@ const COMPRESS_URL = (import.meta.env.VITE_COMPRESS_API_URL || "").trim();
 const COMPRESS_MIN_MB = Number(import.meta.env.VITE_COMPRESS_MIN_MB || 12);
 const COMPRESS_DPI = Number(import.meta.env.VITE_COMPRESS_DPI || 300);
 
+function readResponseHeader(response, name) {
+  return response.headers.get(name) || "";
+}
+
 /**
  * Send a generated PDF to the Acton PDF Compressor API on Render.
  * @param {Blob} pdfBlob - Generated presentation PDF
- * @returns {Promise<{ success: true, blob: Blob, originalSizeMb: number, compressedSizeMb: number, preset: string } | { success: false, error: string }>}
+ * @returns {Promise<{ success: true, blob: Blob, originalSizeMb: number, compressedSizeMb: number, preset: string, dpi: string, compressionWarning: string } | { success: false, error: string }>}
  */
 export async function compressPdf(pdfBlob) {
   if (!COMPRESS_URL) {
@@ -26,11 +30,12 @@ export async function compressPdf(pdfBlob) {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
-      let message = `Compression failed (${response.status}).`;
+      let message = `Optimization failed (${response.status}).`;
 
       try {
         const payload = JSON.parse(errorText);
         if (payload.error) message = payload.error;
+        else if (payload.message) message = payload.message;
       } catch {
         if (errorText) message = errorText;
       }
@@ -41,11 +46,13 @@ export async function compressPdf(pdfBlob) {
     const compressedBuffer = await response.arrayBuffer();
     const blob = new Blob([compressedBuffer], { type: "application/pdf" });
 
-    const originalSizeMb = Number(response.headers.get("X-Original-Size-MB") || 0);
+    const originalSizeMb = Number(readResponseHeader(response, "X-Original-Size-MB") || 0);
     const compressedSizeMb =
-      Number(response.headers.get("X-Compressed-Size-MB") || 0) ||
+      Number(readResponseHeader(response, "X-Compressed-Size-MB") || 0) ||
       blob.size / (1024 * 1024);
-    const preset = response.headers.get("X-Compression-Preset") || "";
+    const preset = readResponseHeader(response, "X-Compression-Preset");
+    const dpi = readResponseHeader(response, "X-Compression-DPI");
+    const compressionWarning = readResponseHeader(response, "X-Compression-Warning");
 
     return {
       success: true,
@@ -53,18 +60,40 @@ export async function compressPdf(pdfBlob) {
       originalSizeMb,
       compressedSizeMb,
       preset,
+      dpi,
+      compressionWarning,
     };
   } catch (error) {
     return {
       success: false,
-      error: error.message || "Could not reach the PDF compression service.",
+      error: error.message || "Could not reach the PDF optimization service.",
     };
   }
 }
 
+function buildOptimizationDetails(result) {
+  const parts = [];
+
+  if (result.originalSizeMb > 0) {
+    parts.push(`Original: ${result.originalSizeMb.toFixed(1)} MB`);
+  }
+
+  parts.push(`Optimized: ${result.compressedSizeMb.toFixed(1)} MB`);
+
+  if (result.preset) {
+    parts.push(`Preset: ${result.preset}`);
+  }
+
+  if (result.dpi) {
+    parts.push(`DPI: ${result.dpi}`);
+  }
+
+  return parts.join(" · ");
+}
+
 /**
- * Compress catalogue PDF bytes for the export bar.
- * Falls back to the original PDF when compression is unavailable or fails.
+ * Optimize catalogue PDF bytes for the export bar.
+ * Falls back to the original PDF when optimization is unavailable or fails.
  */
 export async function compressCatalogPdf(pdfBytes) {
   const originalBlob = new Blob([pdfBytes], { type: "application/pdf" });
@@ -73,24 +102,15 @@ export async function compressCatalogPdf(pdfBytes) {
 
   if (result.success) {
     const compressedBytes = new Uint8Array(await result.blob.arrayBuffer());
-    const sizeParts = [];
-    if (result.originalSizeMb > 0) {
-      sizeParts.push(`from ${result.originalSizeMb.toFixed(1)} MB`);
-    }
-    sizeParts.push(`to ${result.compressedSizeMb.toFixed(1)} MB`);
-    if (result.preset) {
-      sizeParts.push(`(${result.preset})`);
-    }
-
-    const sizeDetail =
-      sizeParts.length > 0 ? ` (${sizeParts.join(" ")})` : "";
 
     return {
       bytes: compressedBytes,
       sizeMb: result.compressedSizeMb,
       compressed: true,
       warning: null,
-      notice: `PDF compressed successfully.${sizeDetail}`,
+      apiWarning: result.compressionWarning || null,
+      notice: `PDF optimized for email: ${result.compressedSizeMb.toFixed(1)} MB.`,
+      details: buildOptimizationDetails(result),
       notConfigured: false,
     };
   }
@@ -101,7 +121,9 @@ export async function compressCatalogPdf(pdfBytes) {
       sizeMb: originalSizeMb,
       compressed: false,
       warning: "PDF compression is not configured.",
+      apiWarning: null,
       notice: null,
+      details: null,
       notConfigured: true,
     };
   }
@@ -111,7 +133,9 @@ export async function compressCatalogPdf(pdfBytes) {
     sizeMb: originalSizeMb,
     compressed: false,
     warning: "PDF compression failed, so the original PDF was used.",
+    apiWarning: null,
     notice: null,
+    details: null,
     notConfigured: false,
   };
 }
