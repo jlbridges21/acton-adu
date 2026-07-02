@@ -115,13 +115,11 @@ Restart `npm run dev` after changing env vars.
 
 ### How it works in the app
 
-1. The app builds the PDF in the browser
-2. Compression runs **only when the user checks “Compress PDF”** in the export panel (unchecked by default)
-3. If checked and `VITE_COMPRESS_API_URL` is set, the PDF is posted to Render as `FormData` field `file` with `minMb` (default **12**) and `dpi` (default **300**)
-4. The compressed PDF is used for download and share links when compression succeeds
-5. If compression fails or is not configured, the original PDF is used instead
-
-Compression creates a smaller email-friendly file but takes longer and may slightly reduce image quality.
+1. The app builds the PDF once in the browser.
+2. **Compress PDF unchecked (default):** downloads `Acton-BR-Presentation.pdf` immediately. No Render API call.
+3. **Compress PDF checked:** sends that PDF once to Render as `FormData` field `file`, then downloads `Acton-BR-Presentation-Email-Ready.pdf` if compression succeeds.
+4. If compression fails or is not configured, the original PDF is downloaded instead.
+5. The Render compressor controls quality and file size. Final size may vary; the goal is under 20 MB, not exactly 12 MB.
 
 ## Features
 
@@ -140,10 +138,11 @@ Compression creates a smaller email-friendly file but takes longer and may sligh
 2. Optional: include package examples
 3. Optional: compress PDF for email (smaller file, may take longer)
 4. Optional: create shareable customer link
-5. App builds the PDF in the browser
-6. If “Compress PDF” is checked and configured, PDF is sent to the Render compressor API
+5. App builds the PDF once in the browser
+6. If “Compress PDF” is checked, that PDF is sent once to the Render compressor API
 7. Compressed PDF downloads as `Acton-BR-Presentation-Email-Ready.pdf` when compression succeeds
-8. If share link is enabled, the same PDF (compressed or original) uploads to `customer-presentations`
+8. Normal PDF downloads as `Acton-BR-Presentation.pdf` when compression is unchecked
+9. If share link is enabled, the same PDF (compressed or original) uploads to `customer-presentations`
 
 If compression fails, the original PDF is downloaded and a warning is shown.
 

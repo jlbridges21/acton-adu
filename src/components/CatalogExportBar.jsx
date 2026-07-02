@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { usePriceRegion } from "../context/PriceRegionContext";
-import { compressCatalogPdf } from "../lib/compressPdf";
 import { copyToClipboard } from "../lib/copyToClipboard";
 import { saveCatalogExport } from "../lib/catalogExports";
 import { saveCustomerPresentation } from "../lib/customerPresentations";
-import { buildCatalogPdfBytes, downloadCatalogPdf } from "../lib/generateCatalogPdf";
+import { downloadPdfExport, exportCatalogPdf } from "../lib/pdf/exportCatalogPdf";
 
 export default function CatalogExportBar({
   selectedCount,
@@ -17,14 +16,14 @@ export default function CatalogExportBar({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [generating, setGenerating] = useState(false);
-  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [statusText, setStatusText] = useState("");
   const [includePackageExamples, setIncludePackageExamples] = useState(false);
   const [createShareableLink, setCreateShareableLink] = useState(false);
   const [compressPdfEnabled, setCompressPdfEnabled] = useState(false);
   const [shareUrl, setShareUrl] = useState("");
   const [copyFeedback, setCopyFeedback] = useState("");
-  const [optimizationDetails, setOptimizationDetails] = useState("");
-  const [optimizationWarning, setOptimizationWarning] = useState("");
+  const [exportDetails, setExportDetails] = useState("");
+  const [exportWarning, setExportWarning] = useState("");
   const { priceRegion } = usePriceRegion();
 
   if (selectedCount === 0) return null;
@@ -49,59 +48,47 @@ export default function CatalogExportBar({
     setNotice("");
     setCopyFeedback("");
     setShareUrl("");
-    setOptimizationDetails("");
-    setOptimizationWarning("");
+    setExportDetails("");
+    setExportWarning("");
+    setStatusText("");
     setGenerating(true);
 
     try {
-      const pdfBytes = await buildCatalogPdfBytes({
-        customerName,
-        plans: selectedPlans,
-        priceRegion,
-        includePackageExamples,
-      });
+      const exportResult = await exportCatalogPdf(
+        {
+          customerName,
+          plans: selectedPlans,
+          priceRegion,
+          includePackageExamples,
+          compressPdfEnabled,
+        },
+        (message) => {
+          setStatusText(message);
+          setNotice(message);
+        },
+      );
 
-      let finalBytes = pdfBytes;
-      let compressed = false;
-      let fileSizeMb = pdfBytes.length / (1024 * 1024);
+      setExportDetails(exportResult.details || "");
+      setExportWarning(exportResult.warning || "");
 
-      if (compressPdfEnabled) {
-        setIsOptimizing(true);
-        setNotice("Optimizing PDF for email…");
-        const compression = await compressCatalogPdf(pdfBytes);
-        setIsOptimizing(false);
-        finalBytes = compression.bytes;
-        compressed = compression.compressed;
-        fileSizeMb = compression.sizeMb;
-        setOptimizationDetails(compression.details || "");
-        setOptimizationWarning(compression.apiWarning || "");
-
-        if (compression.warning) {
-          setNotice(compression.warning);
-        } else if (compression.notice) {
-          setNotice(compression.notice);
-        }
-      }
+      setNotice(exportResult.notice || "");
 
       if (createShareableLink) {
         const presentation = await saveCustomerPresentation({
           title: customerName.trim(),
-          pdfBytes: finalBytes,
+          pdfBytes: exportResult.bytes,
           includedExamples: includePackageExamples,
-          compressed,
-          fileSizeMb,
+          compressed: exportResult.compressed,
+          fileSizeMb: exportResult.sizeMb,
         });
         setShareUrl(presentation.shareUrl);
         window.open(presentation.shareUrl, "_blank", "noopener,noreferrer");
         setNotice((current) =>
-          `${current ? `${current} ` : ""}Customer share link created.`,
+          `${current ? `${current} ` : ""}Shareable customer link created.`,
         );
       }
 
-      downloadCatalogPdf(finalBytes, {
-        customerName,
-        emailReady: compressed,
-      });
+      downloadPdfExport(exportResult);
 
       try {
         await saveCatalogExport({
@@ -119,9 +106,13 @@ export default function CatalogExportBar({
       setError(err.message || "Could not create PDF. Try again.");
     } finally {
       setGenerating(false);
-      setIsOptimizing(false);
+      setStatusText("");
     }
   };
+
+  const buttonLabel = generating
+    ? statusText || (includePackageExamples ? "Creating combined PDF…" : "Creating PDF…")
+    : "Create PDF";
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-4 py-4 shadow-[0_-8px_30px_rgba(15,23,42,0.12)] backdrop-blur sm:px-6">
@@ -186,8 +177,8 @@ export default function CatalogExportBar({
                 setCompressPdfEnabled(e.target.checked);
                 setError("");
                 setNotice("");
-                setOptimizationDetails("");
-                setOptimizationWarning("");
+                setExportDetails("");
+                setExportWarning("");
               }}
               disabled={generating}
               className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
@@ -195,7 +186,8 @@ export default function CatalogExportBar({
             <span className="text-sm text-slate-700">
               <span className="block font-medium">Compress PDF</span>
               <span className="mt-0.5 block text-xs text-slate-500">
-                Optimizes the file for email by aiming for the best quality under 20 MB.
+                Sends the generated PDF to the Render compressor for an email-friendly file.
+                May take longer than a normal export.
               </span>
             </span>
           </label>
@@ -213,15 +205,15 @@ export default function CatalogExportBar({
             </p>
           )}
 
-          {optimizationDetails && (
+          {exportDetails && (
             <p className="mt-1 text-xs text-slate-500" role="status">
-              {optimizationDetails}
+              {exportDetails}
             </p>
           )}
 
-          {optimizationWarning && (
+          {exportWarning && exportWarning !== notice && (
             <p className="mt-1 text-xs text-amber-700" role="status">
-              {optimizationWarning}
+              {exportWarning}
             </p>
           )}
 
@@ -277,13 +269,7 @@ export default function CatalogExportBar({
             disabled={generating}
             className="rounded-full bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-60"
           >
-            {generating
-              ? isOptimizing
-                ? "Optimizing PDF for email…"
-                : includePackageExamples
-                  ? "Creating combined PDF…"
-                  : "Creating PDF…"
-              : "Create PDF"}
+            {buttonLabel}
           </button>
         </div>
       </div>

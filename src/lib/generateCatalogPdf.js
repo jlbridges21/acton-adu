@@ -5,6 +5,11 @@ import watermarkUrl from "../../public/watermark.png?url";
 import { fetchEndTemplatePdfBytes } from "./catalogAssets";
 import { formatPlanPrice } from "../config/pricing";
 import { formatBaths } from "../utils/filters";
+import {
+  buildPresentationTitle,
+  PDF_FILENAME_EMAIL_READY,
+  PDF_FILENAME_PRESENTATION,
+} from "./pdf/pdfSizeUtils";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -122,7 +127,7 @@ function drawCoverPage(page, coverImage, customerName, fonts) {
     height: coverH,
   });
 
-  const title = `${customerName.trim()} Build Ready Catalogue`;
+  const title = buildPresentationTitle(customerName);
   const size = 20;
   let fontSize = size;
   let textWidth = fonts.bold.widthOfTextAtSize(title, fontSize);
@@ -263,21 +268,13 @@ async function drawPlanPage(pdfDoc, plan, fonts, watermarkImage, priceRegion) {
   }
 }
 
-export function downloadCatalogPdf(bytes, { customerName, emailReady = false } = {}) {
-  const safeName = (customerName || "Customer")
-    .trim()
-    .replace(/[\\/:*?"<>|]/g, "")
-    .replace(/\s+/g, " ");
-
-  const filename = emailReady
-    ? "Acton-BR-Presentation-Email-Ready.pdf"
-    : `${safeName} - Acton ADU - BR Catalogue.pdf`;
-
+export function downloadCatalogPdf(bytes, { emailReady = false } = {}) {
+  const fileName = emailReady ? PDF_FILENAME_EMAIL_READY : PDF_FILENAME_PRESENTATION;
   const blob = new Blob([bytes], { type: "application/pdf" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = filename;
+  link.download = fileName;
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -375,6 +372,6 @@ export async function generateCatalogPdf({
     includePackageExamples,
   });
 
-  downloadCatalogPdf(pdfBytes, { customerName, emailReady });
+  downloadCatalogPdf(pdfBytes, { emailReady });
   return pdfBytes;
 }
