@@ -84,7 +84,6 @@ export default function CatalogExportBar({
         );
         setGenerating(false);
         setBackgroundProcessing(true);
-        window.open(pendingPresentation.shareUrl, "_blank", "noopener,noreferrer");
       }
 
       const finalPdf = await createFinalPdf(
@@ -285,13 +284,23 @@ export default function CatalogExportBar({
                   onFocus={(e) => e.target.select()}
                   className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
                 />
-                <button
-                  type="button"
-                  onClick={handleCopyShareLink}
-                  className="rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
-                >
-                  Copy Link
-                </button>
+                <div className="flex shrink-0 gap-2">
+                  <a
+                    href={shareUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Open Link
+                  </a>
+                  <button
+                    type="button"
+                    onClick={handleCopyShareLink}
+                    className="rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+                  >
+                    Copy Link
+                  </button>
+                </div>
               </div>
               {copyFeedback && (
                 <p
