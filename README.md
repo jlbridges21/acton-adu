@@ -1,11 +1,28 @@
 # Acton BR Library
 
-Public floorplan library for Acton ADU plans. Anyone with the URL can browse. Only **admin** users (assigned in Supabase) can upload new plans after signing in.
+Internal Acton ADU floorplan library. Users must sign in; only **acton** and **admin** roles can view plans. **Admin** can upload and edit.
+
+## Roles
+
+| Role | Access |
+|------|--------|
+| `user` | Signed in only — no floorplans (default for new accounts) |
+| `acton` | Browse, filter, export PDF catalogues |
+| `admin` | Everything acton can do, plus upload and edit |
+
+Grant access in Supabase SQL:
+
+```sql
+update public.profiles set role = 'acton' where email = 'sales@acton.com';
+update public.profiles set role = 'admin' where email = 'admin@acton.com';
+```
 
 ## Tech stack
 
 - React + Vite + Tailwind CSS
 - Supabase Auth, Database, and Storage
+- `pdf-lib` for catalogue generation
+- Acton PDF Compressor API on Render for email-friendly PDF compression
 
 ## Setup
 
@@ -15,90 +32,150 @@ Create a project at [supabase.com](https://supabase.com). Copy **Project URL** a
 
 ### 2. Database
 
-Run `supabase-schema.sql` in the **SQL Editor**. This creates:
+Run `supabase-schema.sql` in the **SQL Editor** for new projects.
 
-- `floorplans` — plan metadata (public read)
-- `profiles` — one row per user with `role` (`user` or `admin`)
-- RLS so only admins can insert floorplans
+**Existing projects:** also run any needed migration files:
+
+- `supabase-migration-acton-role.sql`
+- `supabase-migration-admin-delete.sql`
+- `supabase-migration-catalog-exports.sql`
+- `supabase-migration-catalog-assets-storage.sql`
+- `supabase-migration-customer-presentations.sql`
 
 ### 3. Auth
 
-In **Authentication → Providers**, enable **Email** (password sign-in).
+Enable **Email** under **Authentication → Providers**.
 
-Optional: disable “Confirm email” for faster internal testing.
+### 4. Storage buckets
 
-### 4. Storage
+Create these buckets in Supabase Storage:
 
-1. Create a **public** bucket named `floorplans`.
-2. Add storage policies from the bottom of `supabase-schema.sql` (public read, admin-only upload).
+| Bucket | Purpose | Suggested access |
+|--------|---------|------------------|
+| `floorplans` | Plan images/PDFs | Public read; admin upload |
+| `catalog-assets` | Package examples end template | Public read or authenticated read |
+| `customer-presentations` | Hosted customer PDF links | Public read; acton/admin upload |
 
-### 5. Grant admin access (manual)
+Apply the storage policies from `supabase-schema.sql` and the migration files.
 
-When someone should upload plans, promote them in SQL:
+Upload the package examples file to:
 
-```sql
-update public.profiles
-set role = 'admin'
-where email = 'teammember@acton.com';
-```
+`catalog-assets/package-examples/end-template.pdf`
 
-New sign-ups default to `user` (browse only).
-
-**Existing projects:** add the `series` column:
-
-```sql
-alter table floorplans add column if not exists series text;
-```
-
-(See `supabase-migration-series.sql`.)
-
-**Existing projects:** if the table already exists, run only the new policy:
-
-```sql
-create policy "Admins can update floorplans"
-  on floorplans for update
-  to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
-```
-
-### 6. Environment variables
+### 5. Environment variables
 
 ```bash
 cp .env.example .env
 ```
 
-```
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your_anon_key
-```
+Required:
 
-### 7. Run
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+
+Optional:
+
+- `VITE_COMPRESS_API_URL` — full URL of the Acton PDF Compressor API (see **PDF Compression Setup** below)
+
+### 6. Run locally
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` — single page for everyone.
+The app runs on `http://localhost:5173`.
 
-- **Browse** — no login required  
-- **+ Add Plan** — sign in; only `admin` role can upload  
+## PDF Compression Setup
 
-## How it works
+PDF compression is handled by a separate **Render** service called **Acton PDF Compressor**.
 
-| File | Purpose |
-|------|---------|
-| `src/lib/supabaseClient.js` | Supabase connection |
-| `src/context/AuthContext.jsx` | Sign in/up, session, reads `profiles.role` |
-| `src/pages/LibraryPage.jsx` | Public library + Add Plan flow |
-| `src/components/LoginModal.jsx` | Login when adding a plan |
-| `src/components/AddPlanModal.jsx` | Upload form (admins only) |
-| `src/lib/floorplans.js` | Fetch plans / upload to Storage + table |
+**Endpoint:**
 
-## Build
+`https://acton-pdf-compressor.onrender.com/compress-pdf`
+
+### Local development
+
+Add this to `.env` or `.env.local`:
+
+```bash
+VITE_COMPRESS_API_URL=https://acton-pdf-compressor.onrender.com/compress-pdf
+```
+
+Restart `npm run dev` after changing env vars.
+
+### Production (Vercel)
+
+1. Open your Vercel project → **Settings** → **Environment Variables**
+2. Add:
+
+   `VITE_COMPRESS_API_URL` = `https://acton-pdf-compressor.onrender.com/compress-pdf`
+
+3. **Redeploy** the Vercel app after saving the variable
+
+### How it works in the app
+
+1. The app builds the PDF in the browser
+2. If `VITE_COMPRESS_API_URL` is set, the PDF is posted to Render as `FormData` field `file`
+3. The compressed PDF is used for download and share links when compression succeeds
+4. If compression fails or is not configured, the original PDF is used instead
+
+## Features
+
+- Sign in / create account required before library access
+- Multi-select checkbox filters (series, sq ft, beds, baths, price, pre-approved)
+- San Jose / LA pricing toggle
+- PDF catalogue export with optional package examples appendix
+- PDF compression for email-friendly downloads
+- Optional shareable customer presentation links (`/share/:token`)
+- Admin upload, edit, delete, and replace plan files
+- Saved catalogue history per user
+
+## PDF export flow
+
+1. Select floorplans and enter a customer name
+2. Optional: include package examples
+3. Optional: create shareable customer link
+4. App builds the PDF in the browser
+5. If configured, PDF is sent to the Render compressor API
+6. Compressed PDF downloads as `Acton-BR-Presentation-Email-Ready.pdf` when compression succeeds
+7. If share link is enabled, the same PDF (compressed or original) uploads to `customer-presentations`
+
+If compression fails, the original PDF is downloaded and a warning is shown.
+
+## Shareable customer links
+
+Public route: `/share/:shareToken`
+
+- No login required
+- Loads presentation metadata from `customer_presentations`
+- Embeds the hosted PDF from Supabase Storage
+- Customers can view or download the PDF
+
+## Admin edit troubleshooting
+
+If admin edits appear to save but data does not change:
+
+1. Confirm your user has `role = 'admin'` in `profiles`
+2. Confirm the `"Admins can update floorplans"` RLS policy exists
+3. The app now verifies that Supabase returns an updated row and shows an error if not
+
+## Build & deploy
+
+### Frontend (Vercel)
 
 ```bash
 npm run build
-npm run preview
 ```
+
+Deploy the repo to Vercel. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+
+`vercel.json` includes SPA rewrites so `/share/:token` works.
+
+## Project scripts
+
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | Start local dev server |
+| `npm run build` | Production frontend build |
+| `npm run preview` | Preview production build |

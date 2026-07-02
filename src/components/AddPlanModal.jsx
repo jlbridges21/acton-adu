@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { uploadFloorplan } from "../lib/floorplans";
 import { normalizeSeries } from "../utils/filters";
+import SeriesSelect from "./SeriesSelect";
 
 const inputClass =
   "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20";
@@ -149,14 +150,10 @@ export default function AddPlanModal({ open, onClose, onUploaded }) {
             <label className={labelClass} htmlFor="plan-series">
               Series *
             </label>
-            <input
+            <SeriesSelect
               id="plan-series"
-              type="text"
-              required
               value={form.series}
-              onChange={(e) => update("series", e.target.value)}
-              className={inputClass}
-              placeholder="e.g. BR, Studio, Premium"
+              onChange={(value) => update("series", value)}
             />
           </div>
 

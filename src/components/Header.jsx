@@ -1,19 +1,32 @@
 export default function Header({
   badge = "Floorplan Library",
   onAddPlan,
+  showAddPlan = false,
+  onOpenCatalogHistory,
   userEmail,
   onSignOut,
 }) {
   return (
     <header className="relative border-b border-slate-200 bg-white px-4 py-10 sm:px-6 lg:px-8">
       <div className="absolute right-4 top-4 flex flex-col items-end gap-2 sm:right-6 lg:right-8">
-        <button
-          type="button"
-          onClick={onAddPlan}
-          className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-        >
-          + Add Plan
-        </button>
+        {onOpenCatalogHistory && (
+          <button
+            type="button"
+            onClick={onOpenCatalogHistory}
+            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+          >
+            My Catalogues
+          </button>
+        )}
+        {showAddPlan && onAddPlan && (
+          <button
+            type="button"
+            onClick={onAddPlan}
+            className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          >
+            + Add Plan
+          </button>
+        )}
         {userEmail && onSignOut && (
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <span className="max-w-[160px] truncate sm:max-w-[220px]">{userEmail}</span>

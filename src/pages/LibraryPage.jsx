@@ -1,42 +1,46 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Header from "../components/Header";
 import FilterBar from "../components/FilterBar";
-import FloorplanCard from "../components/FloorplanCard";
+import SortBar from "../components/SortBar";
+import FloorplanGrid from "../components/FloorplanGrid";
+import FloorplanSeriesSections from "../components/FloorplanSeriesSections";
 import FloorplanViewModal from "../components/FloorplanViewModal";
 import FloorplanEditModal from "../components/FloorplanEditModal";
 import EmptyState from "../components/EmptyState";
-import LoginModal from "../components/LoginModal";
 import AddPlanModal from "../components/AddPlanModal";
 import PermissionModal from "../components/PermissionModal";
+import CatalogExportBar from "../components/CatalogExportBar";
+import CatalogHistoryModal from "../components/CatalogHistoryModal";
 import { useAuth } from "../context/AuthContext";
+import { usePriceRegion } from "../context/PriceRegionContext";
 import { fetchFloorplans } from "../lib/floorplans";
 import {
   DEFAULT_FILTERS,
+  DEFAULT_SORT,
+  SORT_OPTIONS,
   filterFloorplans,
   getUniqueSeries,
+  groupFloorplansBySeries,
+  sortFloorplans,
 } from "../utils/filters";
 
 export default function LibraryPage() {
-  const {
-    user,
-    isAdmin,
-    loading: authLoading,
-    signIn,
-    signUp,
-    signOut,
-    refreshProfile,
-  } = useAuth();
+  const { user, isAdmin, signOut } = useAuth();
+  const { priceRegion } = usePriceRegion();
 
   const [floorplans, setFloorplans] = useState([]);
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [sortBy, setSortBy] = useState(DEFAULT_SORT);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const [loginOpen, setLoginOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [permissionOpen, setPermissionOpen] = useState(false);
-  const [pendingAdd, setPendingAdd] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [catalogCustomerName, setCatalogCustomerName] = useState("");
+  const [catalogHistoryOpen, setCatalogHistoryOpen] = useState(false);
+  const [seriesExpandedKeys, setSeriesExpandedKeys] = useState(() => new Set());
 
   const loadFloorplans = useCallback(async () => {
     setLoading(true);
@@ -47,7 +51,7 @@ export default function LibraryPage() {
     } catch (err) {
       setError(
         err.message ||
-          "Could not load floorplans. Check your Supabase connection and try again.",
+          "Could not load floorplans. Check your Supabase connection and role access.",
       );
     } finally {
       setLoading(false);
@@ -58,30 +62,47 @@ export default function LibraryPage() {
     loadFloorplans();
   }, [loadFloorplans]);
 
-  // After login, open upload if user is admin (otherwise show permission message).
-  useEffect(() => {
-    if (!pendingAdd || authLoading || !user) return;
-
-    setPendingAdd(false);
-    setLoginOpen(false);
-
-    if (isAdmin) {
-      setAddOpen(true);
-    } else {
-      setPermissionOpen(true);
-    }
-  }, [pendingAdd, authLoading, user, isAdmin]);
-
   const seriesOptions = useMemo(() => getUniqueSeries(floorplans), [floorplans]);
 
   const filteredFloorplans = useMemo(
-    () => filterFloorplans(floorplans, filters),
-    [floorplans, filters],
+    () =>
+      sortFloorplans(filterFloorplans(floorplans, filters, priceRegion), sortBy, priceRegion),
+    [floorplans, filters, sortBy, priceRegion],
+  );
+
+  const seriesGroups = useMemo(
+    () =>
+      sortBy === "series" ? groupFloorplansBySeries(filteredFloorplans) : [],
+    [filteredFloorplans, sortBy],
   );
 
   const clearFilters = () => setFilters(DEFAULT_FILTERS);
 
   const handleOpenPlan = (plan) => setSelectedPlan(plan);
+
+  const togglePlanSelection = (planId) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(planId)) next.delete(planId);
+      else next.add(planId);
+      return next;
+    });
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setCatalogCustomerName("");
+  };
+
+  const handleRestoreCatalogSelection = ({ customerName, floorplanIds }) => {
+    setCatalogCustomerName(customerName);
+    setSelectedIds(new Set(floorplanIds));
+  };
+
+  const selectedPlans = useMemo(
+    () => floorplans.filter((plan) => selectedIds.has(plan.id)),
+    [floorplans, selectedIds],
+  );
 
   const selectedPlanFresh = useMemo(
     () => floorplans.find((p) => p.id === selectedPlan?.id) ?? selectedPlan,
@@ -89,33 +110,42 @@ export default function LibraryPage() {
   );
 
   const handleAddPlanClick = () => {
-    if (authLoading) return;
-
-    if (!user) {
-      setPendingAdd(true);
-      setLoginOpen(true);
-      return;
-    }
-
-    if (!isAdmin) {
+    if (isAdmin) {
+      setAddOpen(true);
+    } else {
       setPermissionOpen(true);
-      return;
     }
-
-    setAddOpen(true);
   };
 
-  const handleLogin = async ({ mode, email, password }) => {
-    if (mode === "signUp") {
-      await signUp(email, password);
-      return;
-    }
+  const handlePlanDeleted = (planId) => {
+    setSelectedPlan(null);
+    setSelectedIds((current) => {
+      if (!current.has(planId)) return current;
+      const next = new Set(current);
+      next.delete(planId);
+      return next;
+    });
+    loadFloorplans();
+  };
 
-    await signIn(email, password);
-    await refreshProfile();
+  const allSeriesExpanded =
+    seriesGroups.length > 0 &&
+    seriesGroups.every((group) => seriesExpandedKeys.has(group.key));
 
-    if (!pendingAdd) {
-      setLoginOpen(false);
+  const toggleSeriesGroup = (key) => {
+    setSeriesExpandedKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleAllSeriesGroups = () => {
+    if (allSeriesExpanded) {
+      setSeriesExpandedKeys(new Set());
+    } else {
+      setSeriesExpandedKeys(new Set(seriesGroups.map((group) => group.key)));
     }
   };
 
@@ -124,11 +154,15 @@ export default function LibraryPage() {
     !loading && !error && floorplans.length > 0 && filteredFloorplans.length === 0;
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div
+      className={`min-h-screen bg-slate-50 ${selectedIds.size > 0 ? "pb-36" : ""}`}
+    >
       <Header
         onAddPlan={handleAddPlanClick}
+        showAddPlan
+        onOpenCatalogHistory={() => setCatalogHistoryOpen(true)}
         userEmail={user?.email}
-        onSignOut={user ? signOut : undefined}
+        onSignOut={signOut}
       />
 
       <FilterBar
@@ -153,43 +187,53 @@ export default function LibraryPage() {
             <p className="text-sm font-medium text-slate-600">Loading floorplans…</p>
           ) : (
             <>
-              <p className="mb-6 text-sm font-medium text-slate-600">
-                Showing {filteredFloorplans.length} of {floorplans.length} floorplans
-              </p>
+              <SortBar
+                showingCount={filteredFloorplans.length}
+                totalCount={floorplans.length}
+                sortBy={sortBy}
+                sortOptions={SORT_OPTIONS}
+                onSortChange={setSortBy}
+              />
+
+              {sortBy === "series" && seriesGroups.length > 0 && (
+                <div className="mb-6 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={toggleAllSeriesGroups}
+                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                  >
+                    {allSeriesExpanded ? "Collapse All" : "Expand All"}
+                  </button>
+                </div>
+              )}
 
               {showLibraryEmpty ? (
                 <EmptyState variant="library" />
               ) : showFilteredEmpty ? (
                 <EmptyState variant="filtered" onClearFilters={clearFilters} />
+              ) : sortBy === "series" ? (
+                <FloorplanSeriesSections
+                  groups={seriesGroups}
+                  expandedKeys={seriesExpandedKeys}
+                  onToggleGroup={toggleSeriesGroup}
+                  onOpenPlan={handleOpenPlan}
+                  selectedIds={selectedIds}
+                  onToggleSelect={togglePlanSelection}
+                />
               ) : (
-                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {filteredFloorplans.map((plan) => (
-                    <FloorplanCard
-                      key={plan.id}
-                      plan={plan}
-                      onOpenPlan={handleOpenPlan}
-                    />
-                  ))}
-                </div>
+                <FloorplanGrid
+                  plans={filteredFloorplans}
+                  onOpenPlan={handleOpenPlan}
+                  selectedIds={selectedIds}
+                  onToggleSelect={togglePlanSelection}
+                />
               )}
             </>
           )}
         </div>
       </main>
 
-      <LoginModal
-        open={loginOpen}
-        onClose={() => {
-          setLoginOpen(false);
-          setPendingAdd(false);
-        }}
-        onSuccess={handleLogin}
-      />
-
-      <PermissionModal
-        open={permissionOpen}
-        onClose={() => setPermissionOpen(false)}
-      />
+      <PermissionModal open={permissionOpen} onClose={() => setPermissionOpen(false)} />
 
       <AddPlanModal
         open={addOpen}
@@ -197,11 +241,26 @@ export default function LibraryPage() {
         onUploaded={loadFloorplans}
       />
 
+      <CatalogExportBar
+        selectedCount={selectedIds.size}
+        selectedPlans={selectedPlans}
+        customerName={catalogCustomerName}
+        onCustomerNameChange={setCatalogCustomerName}
+        onClearSelection={clearSelection}
+      />
+
+      <CatalogHistoryModal
+        open={catalogHistoryOpen}
+        onClose={() => setCatalogHistoryOpen(false)}
+        onRestoreSelection={handleRestoreCatalogSelection}
+      />
+
       {isAdmin ? (
         <FloorplanEditModal
           plan={selectedPlanFresh}
           onClose={() => setSelectedPlan(null)}
           onSaved={loadFloorplans}
+          onDeleted={handlePlanDeleted}
         />
       ) : (
         <FloorplanViewModal

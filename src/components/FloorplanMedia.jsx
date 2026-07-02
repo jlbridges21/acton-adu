@@ -11,6 +11,7 @@ export default function FloorplanMedia({
   plan,
   maxHeightClass = MODAL_IMAGE_MAX,
   pdfHeight = MODAL_PDF_HEIGHT,
+  openImageInNewTab = false,
 }) {
   const [hasError, setHasError] = useState(false);
 
@@ -43,14 +44,36 @@ export default function FloorplanMedia({
     );
   }
 
+  const openFullSize = () => {
+    window.open(plan.fileUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const image = (
+    <img
+      src={plan.fileUrl}
+      alt={`${plan.name} floorplan`}
+      className={`w-full ${maxHeightClass} object-contain`}
+      onError={() => setHasError(true)}
+    />
+  );
+
   return (
     <div className="flex w-full items-center justify-center bg-slate-50 p-3">
-      <img
-        src={plan.fileUrl}
-        alt={`${plan.name} floorplan`}
-        className={`w-full ${maxHeightClass} object-contain`}
-        onError={() => setHasError(true)}
-      />
+      {openImageInNewTab ? (
+        <button
+          type="button"
+          onClick={openFullSize}
+          className="group w-full cursor-zoom-in rounded-lg transition hover:bg-slate-100/80 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          title="Open full size in new tab"
+        >
+          {image}
+          <span className="mt-2 block text-center text-xs font-medium text-slate-500 opacity-0 transition group-hover:opacity-100">
+            Click to open full size
+          </span>
+        </button>
+      ) : (
+        image
+      )}
     </div>
   );
 }

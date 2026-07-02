@@ -1,7 +1,9 @@
 import FloorplanCard from "./FloorplanCard";
 import FloorplanMedia from "./FloorplanMedia";
 import ModalShell from "./ModalShell";
-import { formatBaths, formatPrice } from "../utils/filters";
+import { formatPlanPrice } from "../config/pricing";
+import { usePriceRegion } from "../context/PriceRegionContext";
+import { formatBaths } from "../utils/filters";
 import { getSimilarFloorplans } from "../utils/similarFloorplans";
 
 export default function FloorplanViewModal({
@@ -10,6 +12,8 @@ export default function FloorplanViewModal({
   onClose,
   onOpenPlan,
 }) {
+  const { priceRegion } = usePriceRegion();
+
   if (!plan) return null;
 
   const similar = getSimilarFloorplans(plan, allPlans);
@@ -34,7 +38,7 @@ export default function FloorplanViewModal({
         </>
       }
     >
-      <FloorplanMedia plan={plan} />
+      <FloorplanMedia plan={plan} openImageInNewTab />
 
       <dl className="grid grid-cols-2 gap-3 border-b border-slate-200 px-4 py-4 sm:grid-cols-3 sm:px-5">
         {plan.series && (
@@ -58,7 +62,7 @@ export default function FloorplanViewModal({
             Base price
           </dt>
           <dd className="mt-0.5 text-base font-semibold text-slate-900">
-            {formatPrice(plan.basePrice)}
+            {formatPlanPrice(plan, priceRegion)}
           </dd>
         </div>
         <div>
@@ -83,7 +87,7 @@ export default function FloorplanViewModal({
             Similar floorplans
           </h3>
           <p className="mt-1 text-xs text-slate-500">
-            Same bedroom count or within ±100 sq ft
+            Within ±100 sq ft
           </p>
           <div className="mt-3 flex gap-4 overflow-x-auto pb-2">
             {similar.map((similarPlan) => (

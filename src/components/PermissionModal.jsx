@@ -10,8 +10,8 @@ export default function PermissionModal({ open, onClose }) {
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
         <h2 className="text-lg font-semibold text-slate-900">Admin access required</h2>
         <p className="mt-2 text-sm text-slate-600">
-          You are signed in, but your account does not have permission to add floorplans.
-          Ask an Acton administrator to set your role to <strong>admin</strong> in Supabase.
+          Only <strong>admin</strong> accounts can upload or edit floorplans. Ask an
+          administrator to upgrade your role in Supabase if you need upload access.
         </p>
         <button
           type="button"

@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { formatBaths, formatPrice } from "../utils/filters";
+import { formatPlanPrice } from "../config/pricing";
+import { usePriceRegion } from "../context/PriceRegionContext";
+import { formatBaths } from "../utils/filters";
 
 function ImagePreview({ plan }) {
   const [hasError, setHasError] = useState(false);
@@ -41,10 +43,35 @@ function PdfPreview({ plan }) {
   );
 }
 
-export default function FloorplanCard({ plan, onOpenPlan }) {
+export default function FloorplanCard({
+  plan,
+  onOpenPlan,
+  selected = false,
+  onToggleSelect,
+}) {
+  const { priceRegion } = usePriceRegion();
+
   return (
-    <article className="group flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+    <article
+      className={`group flex h-full flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
+        selected ? "border-blue-500 ring-2 ring-blue-500/30" : "border-slate-200"
+      }`}
+    >
       <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
+        <label className="absolute left-3 top-3 z-10 flex cursor-pointer items-center justify-center rounded-md bg-white/95 p-1 shadow-sm ring-1 ring-slate-200 transition hover:bg-white">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={(e) => {
+              e.stopPropagation();
+              onToggleSelect?.(plan.id);
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            aria-label={`Select ${plan.name} for PDF catalogue`}
+          />
+        </label>
+
         {plan.fileType === "pdf" ? (
           <PdfPreview plan={plan} />
         ) : (
@@ -72,7 +99,7 @@ export default function FloorplanCard({ plan, onOpenPlan }) {
           </div>
           <div>
             <dt className="text-xs uppercase tracking-wide text-slate-400">Base Price</dt>
-            <dd className="font-medium text-slate-800">{formatPrice(plan.basePrice)}</dd>
+            <dd className="font-medium text-slate-800">{formatPlanPrice(plan, priceRegion)}</dd>
           </div>
           <div>
             <dt className="text-xs uppercase tracking-wide text-slate-400">Bedrooms</dt>

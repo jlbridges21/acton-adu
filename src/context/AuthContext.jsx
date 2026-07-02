@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { canManageFloorplans, canViewFloorplans } from "../config/roles";
 
 const AuthContext = createContext(null);
 
@@ -68,19 +69,23 @@ export function AuthProvider({ children }) {
     if (session?.user) await loadUserProfile(session.user);
   }, [session, loadUserProfile]);
 
+  const role = profile?.role ?? null;
+
   const value = useMemo(
     () => ({
       session,
       user: session?.user ?? null,
       profile,
-      isAdmin: profile?.role === "admin",
+      role,
+      isAdmin: canManageFloorplans(role),
+      canViewFloorplans: canViewFloorplans(role),
       loading,
       signIn,
       signUp,
       signOut,
       refreshProfile,
     }),
-    [session, profile, loading, signIn, signUp, signOut, refreshProfile],
+    [session, profile, role, loading, signIn, signUp, signOut, refreshProfile],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
