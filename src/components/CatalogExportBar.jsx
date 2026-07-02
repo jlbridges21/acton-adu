@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { usePriceRegion } from "../context/PriceRegionContext";
 import { compressCatalogPdf } from "../lib/compressPdf";
+import { copyToClipboard } from "../lib/copyToClipboard";
 import { saveCatalogExport } from "../lib/catalogExports";
 import { saveCustomerPresentation } from "../lib/customerPresentations";
 import { buildCatalogPdfBytes, downloadCatalogPdf } from "../lib/generateCatalogPdf";
@@ -16,9 +17,12 @@ export default function CatalogExportBar({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
   const [includePackageExamples, setIncludePackageExamples] = useState(false);
   const [createShareableLink, setCreateShareableLink] = useState(false);
+  const [compressPdfEnabled, setCompressPdfEnabled] = useState(false);
   const [shareUrl, setShareUrl] = useState("");
+  const [copyFeedback, setCopyFeedback] = useState("");
   const [finalSizeMb, setFinalSizeMb] = useState(null);
   const { priceRegion } = usePriceRegion();
 
@@ -26,17 +30,23 @@ export default function CatalogExportBar({
 
   const handleCopyShareLink = async () => {
     if (!shareUrl) return;
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setNotice("Share link copied to clipboard.");
-    } catch {
-      setNotice("Could not copy automatically. Copy the link manually.");
+
+    setCopyFeedback("");
+    const copied = await copyToClipboard(shareUrl);
+
+    if (copied) {
+      setCopyFeedback("Copied!");
+      window.setTimeout(() => setCopyFeedback(""), 2000);
+      return;
     }
+
+    setCopyFeedback("Could not copy link. Please copy it manually.");
   };
 
   const handleCreatePdf = async () => {
     setError("");
     setNotice("");
+    setCopyFeedback("");
     setShareUrl("");
     setFinalSizeMb(null);
     setGenerating(true);
@@ -49,15 +59,25 @@ export default function CatalogExportBar({
         includePackageExamples,
       });
 
-      setNotice("Compressing PDF for email…");
-      const compression = await compressCatalogPdf(pdfBytes);
-      const finalBytes = compression.bytes;
-      setFinalSizeMb(compression.sizeMb);
+      let finalBytes = pdfBytes;
+      let compressed = false;
+      let fileSizeMb = pdfBytes.length / (1024 * 1024);
 
-      if (compression.warning) {
-        setNotice(compression.warning);
-      } else if (compression.notice) {
-        setNotice(compression.notice);
+      if (compressPdfEnabled) {
+        setIsCompressing(true);
+        setNotice("Compressing PDF for email…");
+        const compression = await compressCatalogPdf(pdfBytes);
+        setIsCompressing(false);
+        finalBytes = compression.bytes;
+        compressed = compression.compressed;
+        fileSizeMb = compression.sizeMb;
+        setFinalSizeMb(compression.sizeMb);
+
+        if (compression.warning) {
+          setNotice(compression.warning);
+        } else if (compression.notice) {
+          setNotice(compression.notice);
+        }
       }
 
       if (createShareableLink) {
@@ -65,8 +85,8 @@ export default function CatalogExportBar({
           title: customerName.trim(),
           pdfBytes: finalBytes,
           includedExamples: includePackageExamples,
-          compressed: compression.compressed,
-          fileSizeMb: compression.sizeMb,
+          compressed,
+          fileSizeMb,
         });
         setShareUrl(presentation.shareUrl);
         window.open(presentation.shareUrl, "_blank", "noopener,noreferrer");
@@ -77,7 +97,7 @@ export default function CatalogExportBar({
 
       downloadCatalogPdf(finalBytes, {
         customerName,
-        emailReady: compression.compressed,
+        emailReady: compressed,
       });
 
       try {
@@ -96,6 +116,7 @@ export default function CatalogExportBar({
       setError(err.message || "Could not create PDF. Try again.");
     } finally {
       setGenerating(false);
+      setIsCompressing(false);
     }
   };
 
@@ -146,11 +167,34 @@ export default function CatalogExportBar({
                 setCreateShareableLink(e.target.checked);
                 setError("");
                 setShareUrl("");
+                setCopyFeedback("");
               }}
               disabled={generating}
               className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
             />
             <span className="text-sm text-slate-700">Create shareable customer link</span>
+          </label>
+
+          <label className="mt-2 flex max-w-xl cursor-pointer items-start gap-2.5">
+            <input
+              type="checkbox"
+              checked={compressPdfEnabled}
+              onChange={(e) => {
+                setCompressPdfEnabled(e.target.checked);
+                setError("");
+                setNotice("");
+                setFinalSizeMb(null);
+              }}
+              disabled={generating}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-sm text-slate-700">
+              <span className="block font-medium">Compress PDF</span>
+              <span className="mt-0.5 block text-xs text-slate-500">
+                Creates a smaller email-friendly file, but may take longer and slightly reduce
+                image quality.
+              </span>
+            </span>
           </label>
 
           {finalSizeMb != null && (
@@ -160,25 +204,45 @@ export default function CatalogExportBar({
           )}
 
           {shareUrl && (
-            <div className="mt-3 flex max-w-xl flex-col gap-2 sm:flex-row sm:items-center">
-              <input
-                type="text"
-                readOnly
-                value={shareUrl}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
-              />
-              <button
-                type="button"
-                onClick={handleCopyShareLink}
-                className="rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
-              >
-                Copy Link
-              </button>
+            <div className="mt-3 max-w-xl">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <input
+                  type="text"
+                  readOnly
+                  value={shareUrl}
+                  onFocus={(e) => e.target.select()}
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                />
+                <button
+                  type="button"
+                  onClick={handleCopyShareLink}
+                  className="rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+                >
+                  Copy Link
+                </button>
+              </div>
+              {copyFeedback && (
+                <p
+                  className={`mt-1.5 text-xs ${
+                    copyFeedback === "Copied!" ? "text-emerald-700" : "text-amber-700"
+                  }`}
+                  role="status"
+                >
+                  {copyFeedback}
+                </p>
+              )}
             </div>
           )}
 
           {notice && (
-            <p className="mt-2 text-sm text-emerald-700" role="status">
+            <p
+              className={`mt-2 text-sm ${
+                notice.includes("failed") || notice.includes("not configured")
+                  ? "text-amber-700"
+                  : "text-emerald-700"
+              }`}
+              role="status"
+            >
               {notice}
             </p>
           )}
@@ -205,9 +269,11 @@ export default function CatalogExportBar({
             className="rounded-full bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-60"
           >
             {generating
-              ? includePackageExamples
-                ? "Creating combined PDF…"
-                : "Creating PDF…"
+              ? isCompressing
+                ? "Compressing PDF for email…"
+                : includePackageExamples
+                  ? "Creating combined PDF…"
+                  : "Creating PDF…"
               : "Create PDF"}
           </button>
         </div>

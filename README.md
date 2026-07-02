@@ -116,9 +116,12 @@ Restart `npm run dev` after changing env vars.
 ### How it works in the app
 
 1. The app builds the PDF in the browser
-2. If `VITE_COMPRESS_API_URL` is set, the PDF is posted to Render as `FormData` field `file`
-3. The compressed PDF is used for download and share links when compression succeeds
-4. If compression fails or is not configured, the original PDF is used instead
+2. Compression runs **only when the user checks “Compress PDF”** in the export panel (unchecked by default)
+3. If checked and `VITE_COMPRESS_API_URL` is set, the PDF is posted to Render as `FormData` field `file`
+4. The compressed PDF is used for download and share links when compression succeeds
+5. If compression fails or is not configured, the original PDF is used instead
+
+Compression creates a smaller email-friendly file but takes longer and may slightly reduce image quality.
 
 ## Features
 
@@ -126,7 +129,7 @@ Restart `npm run dev` after changing env vars.
 - Multi-select checkbox filters (series, sq ft, beds, baths, price, pre-approved)
 - San Jose / LA pricing toggle
 - PDF catalogue export with optional package examples appendix
-- PDF compression for email-friendly downloads
+- Optional PDF compression for email-friendly downloads (user opt-in checkbox)
 - Optional shareable customer presentation links (`/share/:token`)
 - Admin upload, edit, delete, and replace plan files
 - Saved catalogue history per user
@@ -135,11 +138,12 @@ Restart `npm run dev` after changing env vars.
 
 1. Select floorplans and enter a customer name
 2. Optional: include package examples
-3. Optional: create shareable customer link
-4. App builds the PDF in the browser
-5. If configured, PDF is sent to the Render compressor API
-6. Compressed PDF downloads as `Acton-BR-Presentation-Email-Ready.pdf` when compression succeeds
-7. If share link is enabled, the same PDF (compressed or original) uploads to `customer-presentations`
+3. Optional: compress PDF for email (smaller file, may take longer)
+4. Optional: create shareable customer link
+5. App builds the PDF in the browser
+6. If “Compress PDF” is checked and configured, PDF is sent to the Render compressor API
+7. Compressed PDF downloads as `Acton-BR-Presentation-Email-Ready.pdf` when compression succeeds
+8. If share link is enabled, the same PDF (compressed or original) uploads to `customer-presentations`
 
 If compression fails, the original PDF is downloaded and a warning is shown.
 

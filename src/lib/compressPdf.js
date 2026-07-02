@@ -78,12 +78,15 @@ export async function compressCatalogPdf(pdfBytes) {
       sizeParts.push(`(${result.preset})`);
     }
 
+    const sizeDetail =
+      sizeParts.length > 0 ? ` (${sizeParts.join(" ")})` : "";
+
     return {
       bytes: compressedBytes,
       sizeMb: result.compressedSizeMb,
       compressed: true,
       warning: null,
-      notice: `Compressed PDF ready ${sizeParts.join(" ")}.`,
+      notice: `PDF compressed successfully.${sizeDetail}`,
       notConfigured: false,
     };
   }
@@ -93,8 +96,8 @@ export async function compressCatalogPdf(pdfBytes) {
       bytes: pdfBytes,
       sizeMb: originalSizeMb,
       compressed: false,
-      warning: null,
-      notice: "PDF compression is not configured.",
+      warning: "PDF compression is not configured.",
+      notice: null,
       notConfigured: true,
     };
   }
