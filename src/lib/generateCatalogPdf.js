@@ -263,13 +263,15 @@ async function drawPlanPage(pdfDoc, plan, fonts, watermarkImage, priceRegion) {
   }
 }
 
-function downloadPdf(bytes, customerName) {
-  const safeName = customerName
+export function downloadCatalogPdf(bytes, { customerName, emailReady = false } = {}) {
+  const safeName = (customerName || "Customer")
     .trim()
     .replace(/[\\/:*?"<>|]/g, "")
     .replace(/\s+/g, " ");
-  const name = safeName || "Customer";
-  const filename = `${name} - Acton ADU - BR Catalogue.pdf`;
+
+  const filename = emailReady
+    ? "Acton-BR-Presentation-Email-Ready.pdf"
+    : `${safeName} - Acton ADU - BR Catalogue.pdf`;
 
   const blob = new Blob([bytes], { type: "application/pdf" });
   const url = URL.createObjectURL(blob);
@@ -299,11 +301,9 @@ async function appendEndTemplate(pdfDoc) {
 }
 
 /**
- * Builds and downloads a branded PDF catalogue for the selected floorplans.
- * Cover page uses public/catalog-cover.png with the customer name on the blue strip.
- * Plan pages are ordered smallest to largest square footage.
+ * Build the catalogue PDF bytes without downloading.
  */
-export async function generateCatalogPdf({
+export async function buildCatalogPdfBytes({
   customerName,
   plans,
   priceRegion,
@@ -355,6 +355,26 @@ export async function generateCatalogPdf({
     }
   }
 
-  const pdfBytes = await pdfDoc.save();
-  downloadPdf(pdfBytes, trimmedName);
+  return pdfDoc.save();
+}
+
+/**
+ * Builds and downloads a branded PDF catalogue for the selected floorplans.
+ */
+export async function generateCatalogPdf({
+  customerName,
+  plans,
+  priceRegion,
+  includePackageExamples = false,
+  emailReady = false,
+}) {
+  const pdfBytes = await buildCatalogPdfBytes({
+    customerName,
+    plans,
+    priceRegion,
+    includePackageExamples,
+  });
+
+  downloadCatalogPdf(pdfBytes, { customerName, emailReady });
+  return pdfBytes;
 }

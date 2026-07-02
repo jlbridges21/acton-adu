@@ -18,6 +18,7 @@ export default function FloorplanEditModal({ plan, onClose, onSaved, onDeleted }
   const [form, setForm] = useState(null);
   const [replacementFile, setReplacementFile] = useState(null);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -34,6 +35,7 @@ export default function FloorplanEditModal({ plan, onClose, onSaved, onDeleted }
     });
     setReplacementFile(null);
     setError("");
+    setSuccess("");
   }, [plan]);
 
   if (!plan || !form) return null;
@@ -77,6 +79,7 @@ export default function FloorplanEditModal({ plan, onClose, onSaved, onDeleted }
     }
 
     setSaving(true);
+    setSuccess("");
     try {
       if (replacementFile) {
         await replaceFloorplanFile(plan.id, {
@@ -94,8 +97,13 @@ export default function FloorplanEditModal({ plan, onClose, onSaved, onDeleted }
         basePrice,
         preApproved: form.preApproved,
       });
-      onSaved();
-      onClose();
+
+      if (onSaved) {
+        await onSaved();
+      }
+
+      setSuccess("Changes saved successfully.");
+      setReplacementFile(null);
     } catch (err) {
       setError(err.message || "Could not save changes.");
     } finally {
@@ -251,6 +259,12 @@ export default function FloorplanEditModal({ plan, onClose, onSaved, onDeleted }
           )}
         </div>
 
+        {success && (
+          <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800" role="status">
+            {success}
+          </p>
+        )}
+
         {error && (
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
             {error}
@@ -270,9 +284,10 @@ export default function FloorplanEditModal({ plan, onClose, onSaved, onDeleted }
             <button
               type="button"
               onClick={onClose}
-              className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              disabled={saving || deleting}
+              className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60"
             >
-              Cancel
+              {success ? "Close" : "Cancel"}
             </button>
             <button
               type="submit"
