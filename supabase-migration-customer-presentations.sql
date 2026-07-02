@@ -4,12 +4,14 @@ create table if not exists public.customer_presentations (
   id uuid primary key default gen_random_uuid(),
   created_at timestamp with time zone default now(),
   title text,
-  file_url text not null,
-  file_path text not null,
+  file_url text,
+  file_path text,
   included_examples boolean default false,
   compressed boolean default false,
   file_size_mb numeric,
-  share_token text unique not null
+  share_token text unique not null,
+  status text default 'processing',
+  error_message text
 );
 
 create index if not exists customer_presentations_share_token_idx
@@ -25,6 +27,12 @@ create policy "Anyone can view customer presentations"
 create policy "Acton and admin can create customer presentations"
   on public.customer_presentations for insert
   to authenticated
+  with check (public.can_view_floorplans());
+
+create policy "Acton and admin can update customer presentations"
+  on public.customer_presentations for update
+  to authenticated
+  using (public.can_view_floorplans())
   with check (public.can_view_floorplans());
 
 -- Storage bucket: customer-presentations (public read recommended)

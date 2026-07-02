@@ -1,6 +1,12 @@
 import { supabase, isSupabaseConfigured } from "./supabaseClient";
 
 export const CUSTOMER_PRESENTATIONS_BUCKET = "customer-presentations";
+export const PRESENTATION_STATUS = {
+  PROCESSING: "processing",
+  READY: "ready",
+  FAILED: "failed",
+};
+
 const PRESENTATION_FILE_NAME = "acton-br-presentation.pdf";
 
 function createShareToken() {
@@ -26,13 +32,54 @@ export function mapCustomerPresentationFromDb(row) {
     compressed: row.compressed,
     fileSizeMb: row.file_size_mb,
     shareToken: row.share_token,
+    status: row.status || (row.file_url ? PRESENTATION_STATUS.READY : PRESENTATION_STATUS.PROCESSING),
+    errorMessage: row.error_message,
   };
 }
 
-export async function saveCustomerPresentation({
+/**
+ * Create a share record immediately before the PDF exists.
+ */
+export async function createPendingCustomerPresentation({
   title,
-  pdfBytes,
   includedExamples,
+  compressed,
+}) {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const shareToken = createShareToken();
+
+  const { data, error } = await supabase
+    .from("customer_presentations")
+    .insert({
+      title,
+      share_token: shareToken,
+      included_examples: includedExamples,
+      compressed,
+      status: PRESENTATION_STATUS.PROCESSING,
+      file_url: null,
+      file_path: null,
+    })
+    .select("id, share_token")
+    .single();
+
+  if (error) {
+    throw new Error(error.message || "Could not create share link.");
+  }
+
+  return {
+    id: data.id,
+    shareToken: data.share_token,
+    shareUrl: buildShareUrl(data.share_token),
+  };
+}
+
+export async function updateCustomerPresentationReady({
+  presentationId,
+  fileUrl,
+  filePath,
   compressed,
   fileSizeMb,
 }) {
@@ -40,7 +87,55 @@ export async function saveCustomerPresentation({
     throw new Error("Supabase is not configured.");
   }
 
-  const shareToken = createShareToken();
+  const { error } = await supabase
+    .from("customer_presentations")
+    .update({
+      file_url: fileUrl,
+      file_path: filePath,
+      compressed,
+      file_size_mb: fileSizeMb,
+      status: PRESENTATION_STATUS.READY,
+      error_message: null,
+    })
+    .eq("id", presentationId);
+
+  if (error) {
+    throw new Error(error.message || "Could not update customer presentation.");
+  }
+}
+
+export async function markCustomerPresentationFailed(presentationId, errorMessage) {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const { error } = await supabase
+    .from("customer_presentations")
+    .update({
+      status: PRESENTATION_STATUS.FAILED,
+      error_message: errorMessage || "Could not prepare this presentation.",
+    })
+    .eq("id", presentationId);
+
+  if (error) {
+    console.warn("Could not mark presentation as failed.", error);
+  }
+}
+
+/**
+ * Upload PDF bytes to storage and mark the pending presentation ready.
+ */
+export async function uploadPdfForExistingPresentation({
+  presentationId,
+  shareToken,
+  pdfBytes,
+  compressed,
+  fileSizeMb,
+}) {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
   const folder = `${Date.now()}-${shareToken.slice(0, 8)}`;
   const filePath = `${folder}/${PRESENTATION_FILE_NAME}`;
 
@@ -60,25 +155,45 @@ export async function saveCustomerPresentation({
     .from(CUSTOMER_PRESENTATIONS_BUCKET)
     .getPublicUrl(filePath);
 
-  const { error: insertError } = await supabase.from("customer_presentations").insert({
-    title,
-    file_url: publicUrlData.publicUrl,
-    file_path: filePath,
-    included_examples: includedExamples,
+  await updateCustomerPresentationReady({
+    presentationId,
+    fileUrl: publicUrlData.publicUrl,
+    filePath,
     compressed,
-    file_size_mb: fileSizeMb,
-    share_token: shareToken,
+    fileSizeMb,
   });
 
-  if (insertError) {
-    await supabase.storage.from(CUSTOMER_PRESENTATIONS_BUCKET).remove([filePath]);
-    throw new Error(insertError.message || "Could not save customer presentation.");
-  }
+  return {
+    fileUrl: publicUrlData.publicUrl,
+    filePath,
+  };
+}
+
+/** Legacy one-step save (kept for compatibility). */
+export async function saveCustomerPresentation({
+  title,
+  pdfBytes,
+  includedExamples,
+  compressed,
+  fileSizeMb,
+}) {
+  const pending = await createPendingCustomerPresentation({
+    title,
+    includedExamples,
+    compressed,
+  });
+
+  await uploadPdfForExistingPresentation({
+    presentationId: pending.id,
+    shareToken: pending.shareToken,
+    pdfBytes,
+    compressed,
+    fileSizeMb,
+  });
 
   return {
-    shareToken,
-    fileUrl: publicUrlData.publicUrl,
-    shareUrl: buildShareUrl(shareToken),
+    shareToken: pending.shareToken,
+    shareUrl: pending.shareUrl,
   };
 }
 

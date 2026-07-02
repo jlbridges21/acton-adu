@@ -61,12 +61,14 @@ create table if not exists public.customer_presentations (
   id uuid primary key default gen_random_uuid(),
   created_at timestamp with time zone default now(),
   title text,
-  file_url text not null,
-  file_path text not null,
+  file_url text,
+  file_path text,
   included_examples boolean default false,
   compressed boolean default false,
   file_size_mb numeric,
-  share_token text unique not null
+  share_token text unique not null,
+  status text default 'processing',
+  error_message text
 );
 
 
@@ -227,6 +229,15 @@ create policy "Acton and admin can create customer presentations"
   to authenticated
   with check (public.can_view_floorplans());
 
+drop policy if exists "Acton and admin can update customer presentations"
+  on public.customer_presentations;
+
+create policy "Acton and admin can update customer presentations"
+  on public.customer_presentations for update
+  to authenticated
+  using (public.can_view_floorplans())
+  with check (public.can_view_floorplans());
+
 
 -- -----------------------------------------------------------------------------
 -- 9. RLS — profiles
@@ -322,6 +333,37 @@ create policy "Acton and admin can upload customer presentations"
   on storage.objects for insert
   to authenticated
   with check (bucket_id = 'customer-presentations' and public.can_view_floorplans());
+
+
+-- -----------------------------------------------------------------------------
+-- 14. ASYNC SHARE LINKS — processing status + nullable file fields
+-- -----------------------------------------------------------------------------
+
+alter table public.customer_presentations
+  add column if not exists status text default 'processing';
+
+alter table public.customer_presentations
+  add column if not exists error_message text;
+
+alter table public.customer_presentations
+  alter column file_url drop not null;
+
+alter table public.customer_presentations
+  alter column file_path drop not null;
+
+update public.customer_presentations
+set status = 'ready'
+where file_url is not null
+  and (status is null or status = 'processing');
+
+drop policy if exists "Acton and admin can update customer presentations"
+  on public.customer_presentations;
+
+create policy "Acton and admin can update customer presentations"
+  on public.customer_presentations for update
+  to authenticated
+  using (public.can_view_floorplans())
+  with check (public.can_view_floorplans());
 
 
 -- -----------------------------------------------------------------------------

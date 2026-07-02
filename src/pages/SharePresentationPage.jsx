@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { fetchCustomerPresentationByToken } from "../lib/customerPresentations";
+import {
+  fetchCustomerPresentationByToken,
+  PRESENTATION_STATUS,
+} from "../lib/customerPresentations";
+
+const POLL_INTERVAL_MS = 5000;
 
 export default function SharePresentationPage() {
   const { shareToken } = useParams();
@@ -10,9 +15,12 @@ export default function SharePresentationPage() {
 
   useEffect(() => {
     let active = true;
+    let pollTimer = null;
 
-    async function loadPresentation() {
-      setLoading(true);
+    async function loadPresentation({ showLoading = true } = {}) {
+      if (showLoading) {
+        setLoading(true);
+      }
       setError("");
 
       try {
@@ -26,20 +34,47 @@ export default function SharePresentationPage() {
         }
 
         setPresentation(data);
+
+        if (data.status === PRESENTATION_STATUS.PROCESSING && !pollTimer && active) {
+          pollTimer = window.setInterval(() => {
+            loadPresentation({ showLoading: false });
+          }, POLL_INTERVAL_MS);
+        }
+
+        if (
+          data.status === PRESENTATION_STATUS.READY ||
+          data.status === PRESENTATION_STATUS.FAILED
+        ) {
+          if (pollTimer) {
+            window.clearInterval(pollTimer);
+            pollTimer = null;
+          }
+        }
       } catch (err) {
         if (!active) return;
         setError(err.message || "Could not load this presentation.");
         setPresentation(null);
       } finally {
-        if (active) setLoading(false);
+        if (active && showLoading) {
+          setLoading(false);
+        }
       }
     }
 
     loadPresentation();
+
     return () => {
       active = false;
+      if (pollTimer) {
+        window.clearInterval(pollTimer);
+      }
     };
   }, [shareToken]);
+
+  const isProcessing = presentation?.status === PRESENTATION_STATUS.PROCESSING;
+  const isFailed = presentation?.status === PRESENTATION_STATUS.FAILED;
+  const isReady =
+    presentation?.status === PRESENTATION_STATUS.READY && presentation.fileUrl;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -72,7 +107,29 @@ export default function SharePresentationPage() {
             </div>
           )}
 
-          {!loading && presentation && (
+          {!loading && presentation && isProcessing && (
+            <div className="rounded-2xl border border-slate-200 bg-white px-6 py-10 text-center shadow-sm">
+              <div
+                className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600"
+                aria-hidden="true"
+              />
+              <p className="text-base font-medium text-slate-900">
+                Your Acton ADU presentation is being prepared.
+              </p>
+              <p className="mt-2 text-sm text-slate-600">Please check back in a moment.</p>
+            </div>
+          )}
+
+          {!loading && presentation && isFailed && (
+            <div
+              className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900"
+              role="alert"
+            >
+              We had trouble preparing this presentation. Please contact your Acton ADU advisor.
+            </div>
+          )}
+
+          {!loading && isReady && (
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-3">
                 <a

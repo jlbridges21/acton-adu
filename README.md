@@ -41,6 +41,7 @@ Run `supabase-schema.sql` in the **SQL Editor** for new projects.
 - `supabase-migration-catalog-exports.sql`
 - `supabase-migration-catalog-assets-storage.sql`
 - `supabase-migration-customer-presentations.sql`
+- `supabase-migration-customer-presentation-status.sql` (async share links — run on existing DBs)
 
 ### 3. Auth
 
@@ -142,7 +143,7 @@ Restart `npm run dev` after changing env vars.
 6. If “Compress PDF” is checked, that PDF is sent once to the Render compressor API
 7. Compressed PDF downloads as `Acton-BR-Presentation-Email-Ready.pdf` when compression succeeds
 8. Normal PDF downloads as `Acton-BR-Presentation.pdf` when compression is unchecked
-9. If share link is enabled, the same PDF (compressed or original) uploads to `customer-presentations`
+9. If share link is enabled, a `customer_presentations` row is created immediately (`status = processing`), then the same PDF uploads in the background and the record updates to `ready`
 
 If compression fails, the original PDF is downloaded and a warning is shown.
 
@@ -151,9 +152,15 @@ If compression fails, the original PDF is downloaded and a warning is shown.
 Public route: `/share/:shareToken`
 
 - No login required
-- Loads presentation metadata from `customer_presentations`
-- Embeds the hosted PDF from Supabase Storage
-- Customers can view or download the PDF
+- **Link appears immediately** when “Create shareable customer link” is checked — the app creates a `customer_presentations` row with `status = processing` before the PDF finishes generating
+- PDF generation and Supabase upload continue in the background (keep the tab open until upload completes)
+- Share page states:
+  - **processing** — “Your Acton ADU presentation is being prepared.” (polls every 5 seconds)
+  - **ready** — embeds/opens the hosted PDF
+  - **failed** — contact advisor message
+- Compress PDF and share link are independent: share link alone uses the high-quality PDF
+
+Run `supabase-migration-customer-presentation-status.sql` on existing Supabase projects to add `status`, `error_message`, and nullable file fields.
 
 ## Admin edit troubleshooting
 

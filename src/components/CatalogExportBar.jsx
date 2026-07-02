@@ -2,7 +2,11 @@ import { useState } from "react";
 import { usePriceRegion } from "../context/PriceRegionContext";
 import { copyToClipboard } from "../lib/copyToClipboard";
 import { saveCatalogExport } from "../lib/catalogExports";
-import { saveCustomerPresentation } from "../lib/customerPresentations";
+import {
+  createPendingCustomerPresentation,
+  markCustomerPresentationFailed,
+  uploadPdfForExistingPresentation,
+} from "../lib/customerPresentations";
 import { createFinalPdf, downloadPdfExport } from "../lib/pdf/exportCatalogPdf";
 import { formatMb } from "../lib/pdf/pdfSizeUtils";
 
@@ -17,6 +21,7 @@ export default function CatalogExportBar({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [backgroundProcessing, setBackgroundProcessing] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [includePackageExamples, setIncludePackageExamples] = useState(false);
   const [createShareableLink, setCreateShareableLink] = useState(false);
@@ -46,6 +51,12 @@ export default function CatalogExportBar({
 
   const handleCreatePdf = async () => {
     const shouldCompress = compressPdfEnabled === true;
+    const trimmedName = customerName.trim();
+
+    if (!trimmedName) {
+      setError("Enter a customer name for the catalogue.");
+      return;
+    }
 
     setError("");
     setNotice("");
@@ -55,19 +66,30 @@ export default function CatalogExportBar({
     setExportWarning("");
     setStatusText("");
     setGenerating(true);
+    setBackgroundProcessing(false);
 
-    if (import.meta.env.DEV) {
-      console.debug("[PDF export UI]", {
-        shouldCompress,
-        createShareableLink,
-        compressPdfEnabled,
-      });
-    }
+    let pendingPresentation = null;
 
     try {
+      if (createShareableLink) {
+        pendingPresentation = await createPendingCustomerPresentation({
+          title: trimmedName,
+          includedExamples: includePackageExamples,
+          compressed: shouldCompress,
+        });
+
+        setShareUrl(pendingPresentation.shareUrl);
+        setNotice(
+          "Share link created. Preparing PDF in the background… You can copy and send the link now. The PDF will appear once processing finishes.",
+        );
+        setGenerating(false);
+        setBackgroundProcessing(true);
+        window.open(pendingPresentation.shareUrl, "_blank", "noopener,noreferrer");
+      }
+
       const finalPdf = await createFinalPdf(
         {
-          customerName,
+          customerName: trimmedName,
           plans: selectedPlans,
           priceRegion,
           includePackageExamples,
@@ -80,46 +102,26 @@ export default function CatalogExportBar({
 
       setExportDetails(finalPdf.details || "");
       setExportWarning(finalPdf.warning || "");
-      setNotice(`PDF ready. (${formatMb(finalPdf.bytes)} MB)`);
-
-      if (import.meta.env.DEV) {
-        console.debug("[PDF export UI] final PDF", {
-          shouldCompress,
-          createShareableLink,
-          usedCompression: finalPdf.usedCompression,
-          originalSizeMb: finalPdf.originalSizeMb?.toFixed(2),
-          finalSizeMb: finalPdf.sizeMb.toFixed(2),
-          fileName: finalPdf.fileName,
-        });
-      }
-
       downloadPdfExport(finalPdf);
 
-      if (createShareableLink) {
-        const uploadMessage = shouldCompress
-          ? "Uploading compressed PDF and creating share link…"
-          : "Uploading PDF and creating share link…";
-        setStatusText(uploadMessage);
-        setNotice(uploadMessage);
+      if (!createShareableLink) {
+        setNotice(`PDF ready. (${formatMb(finalPdf.bytes)} MB)`);
+      }
 
-        if (import.meta.env.DEV) {
-          console.debug("[PDF export UI] uploading to Supabase", {
-            sizeMb: finalPdf.sizeMb.toFixed(2),
-            compressed: finalPdf.compressed,
-          });
-        }
+      if (createShareableLink && pendingPresentation) {
+        setNotice(
+          "Share link created. Uploading PDF in the background… Keep this tab open until the upload finishes.",
+        );
 
-        const presentation = await saveCustomerPresentation({
-          title: customerName.trim(),
+        await uploadPdfForExistingPresentation({
+          presentationId: pendingPresentation.id,
+          shareToken: pendingPresentation.shareToken,
           pdfBytes: finalPdf.bytes,
-          includedExamples: includePackageExamples,
           compressed: finalPdf.compressed,
           fileSizeMb: finalPdf.sizeMb,
         });
 
-        setShareUrl(presentation.shareUrl);
-        window.open(presentation.shareUrl, "_blank", "noopener,noreferrer");
-        setNotice("Shareable link created.");
+        setNotice("PDF uploaded. Share link is ready.");
       }
 
       try {
@@ -135,16 +137,30 @@ export default function CatalogExportBar({
         );
       }
     } catch (err) {
-      setError(err.message || "Could not create PDF. Try again.");
+      const message = err.message || "Could not create PDF. Try again.";
+
+      if (pendingPresentation) {
+        await markCustomerPresentationFailed(pendingPresentation.id, message);
+        setNotice(
+          "PDF failed to generate. The share link was created, but the presentation could not be prepared.",
+        );
+      } else {
+        setError(message);
+      }
     } finally {
       setGenerating(false);
+      setBackgroundProcessing(false);
       setStatusText("");
     }
   };
 
   const buttonLabel = generating
     ? statusText || "Generating PDF…"
-    : "Create PDF";
+    : backgroundProcessing
+      ? "Preparing PDF…"
+      : "Create PDF";
+
+  const controlsDisabled = generating;
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-4 py-4 shadow-[0_-8px_30px_rgba(15,23,42,0.12)] backdrop-blur sm:px-6">
@@ -177,7 +193,7 @@ export default function CatalogExportBar({
                 setIncludePackageExamples(e.target.checked);
                 setError("");
               }}
-              disabled={generating}
+              disabled={controlsDisabled}
               className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
             />
             <span className="text-sm text-slate-700">
@@ -195,13 +211,13 @@ export default function CatalogExportBar({
                 setShareUrl("");
                 setCopyFeedback("");
               }}
-              disabled={generating}
+              disabled={controlsDisabled}
               className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
             />
             <span className="text-sm text-slate-700">
               Create shareable customer link
               <span className="mt-0.5 block text-xs text-slate-500">
-                Hosts the same PDF online. Does not compress unless Compress PDF is also checked.
+                Link appears immediately. PDF uploads in the background.
               </span>
             </span>
           </label>
@@ -217,17 +233,22 @@ export default function CatalogExportBar({
                 setExportDetails("");
                 setExportWarning("");
               }}
-              disabled={generating}
+              disabled={controlsDisabled}
               className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
             />
             <span className="text-sm text-slate-700">
               <span className="block font-medium">Compress PDF</span>
               <span className="mt-0.5 block text-xs text-slate-500">
-                Sends the generated PDF to the Render compressor for an email-friendly download.
-                Independent of the share link option.
+                Only affects the downloaded/shared PDF. Does not affect how fast the link appears.
               </span>
             </span>
           </label>
+
+          {backgroundProcessing && (
+            <p className="mt-2 text-xs text-amber-700" role="status">
+              Keep this tab open until the upload finishes.
+            </p>
+          )}
 
           {notice && (
             <p
