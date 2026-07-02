@@ -3,7 +3,8 @@ import { usePriceRegion } from "../context/PriceRegionContext";
 import { copyToClipboard } from "../lib/copyToClipboard";
 import { saveCatalogExport } from "../lib/catalogExports";
 import { saveCustomerPresentation } from "../lib/customerPresentations";
-import { downloadPdfExport, exportCatalogPdf } from "../lib/pdf/exportCatalogPdf";
+import { createFinalPdf, downloadPdfExport } from "../lib/pdf/exportCatalogPdf";
+import { formatMb } from "../lib/pdf/pdfSizeUtils";
 
 export default function CatalogExportBar({
   selectedCount,
@@ -44,6 +45,8 @@ export default function CatalogExportBar({
   };
 
   const handleCreatePdf = async () => {
+    const shouldCompress = compressPdfEnabled === true;
+
     setError("");
     setNotice("");
     setCopyFeedback("");
@@ -53,42 +56,71 @@ export default function CatalogExportBar({
     setStatusText("");
     setGenerating(true);
 
+    if (import.meta.env.DEV) {
+      console.debug("[PDF export UI]", {
+        shouldCompress,
+        createShareableLink,
+        compressPdfEnabled,
+      });
+    }
+
     try {
-      const exportResult = await exportCatalogPdf(
+      const finalPdf = await createFinalPdf(
         {
           customerName,
           plans: selectedPlans,
           priceRegion,
           includePackageExamples,
-          compressPdfEnabled,
+          shouldCompress,
         },
         (message) => {
           setStatusText(message);
-          setNotice(message);
         },
       );
 
-      setExportDetails(exportResult.details || "");
-      setExportWarning(exportResult.warning || "");
+      setExportDetails(finalPdf.details || "");
+      setExportWarning(finalPdf.warning || "");
+      setNotice(`PDF ready. (${formatMb(finalPdf.bytes)} MB)`);
 
-      setNotice(exportResult.notice || "");
-
-      if (createShareableLink) {
-        const presentation = await saveCustomerPresentation({
-          title: customerName.trim(),
-          pdfBytes: exportResult.bytes,
-          includedExamples: includePackageExamples,
-          compressed: exportResult.compressed,
-          fileSizeMb: exportResult.sizeMb,
+      if (import.meta.env.DEV) {
+        console.debug("[PDF export UI] final PDF", {
+          shouldCompress,
+          createShareableLink,
+          usedCompression: finalPdf.usedCompression,
+          originalSizeMb: finalPdf.originalSizeMb?.toFixed(2),
+          finalSizeMb: finalPdf.sizeMb.toFixed(2),
+          fileName: finalPdf.fileName,
         });
-        setShareUrl(presentation.shareUrl);
-        window.open(presentation.shareUrl, "_blank", "noopener,noreferrer");
-        setNotice((current) =>
-          `${current ? `${current} ` : ""}Shareable customer link created.`,
-        );
       }
 
-      downloadPdfExport(exportResult);
+      downloadPdfExport(finalPdf);
+
+      if (createShareableLink) {
+        const uploadMessage = shouldCompress
+          ? "Uploading compressed PDF and creating share link…"
+          : "Uploading PDF and creating share link…";
+        setStatusText(uploadMessage);
+        setNotice(uploadMessage);
+
+        if (import.meta.env.DEV) {
+          console.debug("[PDF export UI] uploading to Supabase", {
+            sizeMb: finalPdf.sizeMb.toFixed(2),
+            compressed: finalPdf.compressed,
+          });
+        }
+
+        const presentation = await saveCustomerPresentation({
+          title: customerName.trim(),
+          pdfBytes: finalPdf.bytes,
+          includedExamples: includePackageExamples,
+          compressed: finalPdf.compressed,
+          fileSizeMb: finalPdf.sizeMb,
+        });
+
+        setShareUrl(presentation.shareUrl);
+        window.open(presentation.shareUrl, "_blank", "noopener,noreferrer");
+        setNotice("Shareable link created.");
+      }
 
       try {
         await saveCatalogExport({
@@ -111,7 +143,7 @@ export default function CatalogExportBar({
   };
 
   const buttonLabel = generating
-    ? statusText || (includePackageExamples ? "Creating combined PDF…" : "Creating PDF…")
+    ? statusText || "Generating PDF…"
     : "Create PDF";
 
   return (
@@ -166,7 +198,12 @@ export default function CatalogExportBar({
               disabled={generating}
               className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
             />
-            <span className="text-sm text-slate-700">Create shareable customer link</span>
+            <span className="text-sm text-slate-700">
+              Create shareable customer link
+              <span className="mt-0.5 block text-xs text-slate-500">
+                Hosts the same PDF online. Does not compress unless Compress PDF is also checked.
+              </span>
+            </span>
           </label>
 
           <label className="mt-2 flex max-w-xl cursor-pointer items-start gap-2.5">
@@ -186,8 +223,8 @@ export default function CatalogExportBar({
             <span className="text-sm text-slate-700">
               <span className="block font-medium">Compress PDF</span>
               <span className="mt-0.5 block text-xs text-slate-500">
-                Sends the generated PDF to the Render compressor for an email-friendly file.
-                May take longer than a normal export.
+                Sends the generated PDF to the Render compressor for an email-friendly download.
+                Independent of the share link option.
               </span>
             </span>
           </label>

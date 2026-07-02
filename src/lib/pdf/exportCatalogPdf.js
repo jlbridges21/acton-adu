@@ -7,6 +7,12 @@ import {
   PDF_FILENAME_PRESENTATION,
 } from "./pdfSizeUtils";
 
+function logExportDebug(message, data) {
+  if (import.meta.env.DEV) {
+    console.debug(`[PDF export] ${message}`, data);
+  }
+}
+
 function buildCompressionDetails(result) {
   const parts = [];
   if (result.originalSizeMb > 0) {
@@ -19,18 +25,24 @@ function buildCompressionDetails(result) {
 }
 
 /**
- * Build the final catalogue PDF for download and optional Supabase upload.
+ * Generate the final PDF once. Compress only when shouldCompress is true.
  */
-export async function exportCatalogPdf(
+export async function createFinalPdf(
   {
     customerName,
     plans,
     priceRegion,
     includePackageExamples = false,
-    compressPdfEnabled = false,
+    shouldCompress = false,
   },
   onStatus,
 ) {
+  logExportDebug("starting", {
+    shouldCompress,
+    planCount: plans.length,
+    includePackageExamples,
+  });
+
   onStatus?.("Generating PDF…");
   const originalBytes = await buildCatalogPdfBytes({
     customerName,
@@ -38,37 +50,56 @@ export async function exportCatalogPdf(
     priceRegion,
     includePackageExamples,
   });
+  const originalSizeMb = bytesToMb(originalBytes);
+  const originalBlob = new Blob([originalBytes], { type: "application/pdf" });
 
-  if (!compressPdfEnabled) {
-    onStatus?.(`Final PDF ready: ${formatMb(originalBytes)} MB.`);
+  logExportDebug("original PDF built", {
+    originalSizeMb: originalSizeMb.toFixed(2),
+    shouldCompress,
+  });
+
+  if (!shouldCompress) {
+    logExportDebug("compression skipped", { reason: "shouldCompress is false" });
     return {
-      blob: new Blob([originalBytes], { type: "application/pdf" }),
+      blob: originalBlob,
       bytes: originalBytes,
       fileName: PDF_FILENAME_PRESENTATION,
-      sizeMb: bytesToMb(originalBytes),
+      sizeMb: originalSizeMb,
+      originalSizeMb,
       compressed: false,
-      notice: `Final PDF ready: ${formatMb(originalBytes)} MB.`,
+      usedCompression: false,
       warning: null,
       details: null,
     };
   }
 
   onStatus?.("Compressing PDF for email…");
-  const compression = await compressPdf(
-    new Blob([originalBytes], { type: "application/pdf" }),
-  );
+  logExportDebug("calling compressPdf", { originalSizeMb: originalSizeMb.toFixed(2) });
+
+  const compression = await compressPdf(originalBlob);
+
+  logExportDebug("compressPdf finished", {
+    success: compression.success,
+    error: compression.success ? null : compression.error,
+  });
 
   if (compression.success) {
     const compressedBytes = new Uint8Array(await compression.blob.arrayBuffer());
-    onStatus?.(`Final PDF ready: ${formatMb(compressedBytes)} MB.`);
+    const compressedSizeMb = bytesToMb(compressedBytes);
+
+    logExportDebug("using compressed PDF", {
+      originalSizeMb: originalSizeMb.toFixed(2),
+      compressedSizeMb: compressedSizeMb.toFixed(2),
+    });
 
     return {
       blob: new Blob([compressedBytes], { type: "application/pdf" }),
       bytes: compressedBytes,
       fileName: PDF_FILENAME_EMAIL_READY,
-      sizeMb: bytesToMb(compressedBytes),
+      sizeMb: compressedSizeMb,
+      originalSizeMb,
       compressed: true,
-      notice: `Final PDF ready: ${formatMb(compressedBytes)} MB.`,
+      usedCompression: true,
       warning: compression.compressionWarning || null,
       details: buildCompressionDetails(compression),
     };
@@ -76,28 +107,28 @@ export async function exportCatalogPdf(
 
   if (compression.error === "PDF compression is not configured.") {
     console.warn("PDF compression is not configured.");
-    onStatus?.(`Final PDF ready: ${formatMb(originalBytes)} MB.`);
     return {
-      blob: new Blob([originalBytes], { type: "application/pdf" }),
+      blob: originalBlob,
       bytes: originalBytes,
       fileName: PDF_FILENAME_PRESENTATION,
-      sizeMb: bytesToMb(originalBytes),
+      sizeMb: originalSizeMb,
+      originalSizeMb,
       compressed: false,
-      notice: `Final PDF ready: ${formatMb(originalBytes)} MB.`,
-      warning: "PDF compression is not configured. Original PDF downloaded.",
+      usedCompression: false,
+      warning: "PDF compression is not configured. Original PDF was used.",
       details: null,
     };
   }
 
-  onStatus?.("Compression failed, original PDF downloaded.");
   return {
-    blob: new Blob([originalBytes], { type: "application/pdf" }),
+    blob: originalBlob,
     bytes: originalBytes,
     fileName: PDF_FILENAME_PRESENTATION,
-    sizeMb: bytesToMb(originalBytes),
+    sizeMb: originalSizeMb,
+    originalSizeMb,
     compressed: false,
-    notice: "Compression failed, original PDF downloaded.",
-    warning: compression.error || "Compression failed, original PDF downloaded.",
+    usedCompression: false,
+    warning: compression.error || "Compression failed, original PDF was used.",
     details: null,
   };
 }
@@ -109,4 +140,20 @@ export function downloadPdfExport({ blob, fileName }) {
   link.download = fileName;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+/** @deprecated Use createFinalPdf directly */
+export async function exportCatalogPdf(options, onStatus) {
+  const result = await createFinalPdf(
+    {
+      ...options,
+      shouldCompress: options.compressPdfEnabled === true,
+    },
+    onStatus,
+  );
+
+  return {
+    ...result,
+    notice: `PDF ready. (${formatMb(result.bytes)} MB)`,
+  };
 }
