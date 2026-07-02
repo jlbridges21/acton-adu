@@ -237,9 +237,7 @@ export default function CatalogExportBar({
             />
             <span className="text-sm text-slate-700">
               <span className="block font-medium">Compress PDF</span>
-              <span className="mt-0.5 block text-xs text-slate-500">
-                Only affects the downloaded/shared PDF. Does not affect how fast the link appears.
-              </span>
+
             </span>
           </label>
 
