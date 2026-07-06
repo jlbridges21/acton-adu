@@ -25,54 +25,37 @@ function buildCompressionDetails(result) {
 }
 
 /**
- * Generate the final PDF once. Compress only when shouldCompress is true.
+ * Build the full-quality catalogue PDF in the browser.
+ * Never calls the Render compressor.
  */
-export async function createFinalPdf(
-  {
-    customerName,
-    plans,
-    priceRegion,
-    includePackageExamples = false,
-    shouldCompress = false,
-  },
+export async function buildHighQualityCatalogPdf(
+  { customerName, plans, priceRegion, includePackageExamples = false },
   onStatus,
 ) {
-  logExportDebug("starting", {
-    shouldCompress,
-    planCount: plans.length,
-    includePackageExamples,
-  });
-
   onStatus?.("Generating PDF…");
-  const originalBytes = await buildCatalogPdfBytes({
+
+  const bytes = await buildCatalogPdfBytes({
     customerName,
     plans,
     priceRegion,
     includePackageExamples,
   });
-  const originalSizeMb = bytesToMb(originalBytes);
-  const originalBlob = new Blob([originalBytes], { type: "application/pdf" });
 
-  logExportDebug("original PDF built", {
-    originalSizeMb: originalSizeMb.toFixed(2),
-    shouldCompress,
-  });
+  const originalSizeMb = bytesToMb(bytes);
+  const blob = new Blob([bytes], { type: "application/pdf" });
 
-  if (!shouldCompress) {
-    logExportDebug("compression skipped", { reason: "shouldCompress is false" });
-    return {
-      blob: originalBlob,
-      bytes: originalBytes,
-      fileName: PDF_FILENAME_PRESENTATION,
-      sizeMb: originalSizeMb,
-      originalSizeMb,
-      compressed: false,
-      usedCompression: false,
-      warning: null,
-      details: null,
-    };
-  }
+  return {
+    bytes,
+    blob,
+    sizeMb: originalSizeMb,
+    originalSizeMb,
+  };
+}
 
+/**
+ * Optionally compress a PDF for email. Only call when shouldCompress is true.
+ */
+async function compressPdfForExport(originalBlob, originalSizeMb, onStatus) {
   onStatus?.("Compressing PDF for email…");
   logExportDebug("calling compressPdf", { originalSizeMb: originalSizeMb.toFixed(2) });
 
@@ -107,28 +90,85 @@ export async function createFinalPdf(
 
   if (compression.error === "PDF compression is not configured.") {
     console.warn("PDF compression is not configured.");
+    return null;
+  }
+
+  return {
+    fallback: true,
+    warning: compression.error || "Compression failed, original PDF was used.",
+  };
+}
+
+/**
+ * Generate the final PDF once. Compress only when shouldCompress is true.
+ * Share links should pass shouldCompress only when the Compress PDF checkbox is checked.
+ */
+export async function createFinalPdf(
+  {
+    customerName,
+    plans,
+    priceRegion,
+    includePackageExamples = false,
+    shouldCompress = false,
+  },
+  onStatus,
+) {
+  logExportDebug("starting", {
+    shouldCompress,
+    planCount: plans.length,
+    includePackageExamples,
+  });
+
+  const highQuality = await buildHighQualityCatalogPdf(
+    { customerName, plans, priceRegion, includePackageExamples },
+    onStatus,
+  );
+
+  logExportDebug("original PDF built", {
+    originalSizeMb: highQuality.originalSizeMb.toFixed(2),
+    shouldCompress,
+  });
+
+  if (!shouldCompress) {
+    logExportDebug("compression skipped", { reason: "shouldCompress is false" });
     return {
-      blob: originalBlob,
-      bytes: originalBytes,
+      blob: highQuality.blob,
+      bytes: highQuality.bytes,
       fileName: PDF_FILENAME_PRESENTATION,
-      sizeMb: originalSizeMb,
-      originalSizeMb,
+      sizeMb: highQuality.sizeMb,
+      originalSizeMb: highQuality.originalSizeMb,
       compressed: false,
       usedCompression: false,
-      warning: "PDF compression is not configured. Original PDF was used.",
+      warning: null,
       details: null,
     };
   }
 
+  const compressionResult = await compressPdfForExport(
+    highQuality.blob,
+    highQuality.originalSizeMb,
+    onStatus,
+  );
+
+  if (compressionResult && !compressionResult.fallback) {
+    return compressionResult;
+  }
+
+  const warning =
+    compressionResult?.warning ||
+    (compressionResult === null
+      ? "PDF compression is not configured. Original PDF was used."
+      : "Compression failed, original PDF was used.");
+
   return {
-    blob: originalBlob,
-    bytes: originalBytes,
+    blob: highQuality.blob,
+    bytes: highQuality.bytes,
     fileName: PDF_FILENAME_PRESENTATION,
-    sizeMb: originalSizeMb,
-    originalSizeMb,
+    sizeMb: highQuality.sizeMb,
+    originalSizeMb: highQuality.originalSizeMb,
     compressed: false,
     usedCompression: false,
-    warning: compression.error || "Compression failed, original PDF was used.",
+    warning,
     details: null,
   };
 }

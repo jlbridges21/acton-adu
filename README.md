@@ -135,15 +135,26 @@ Restart `npm run dev` after changing env vars.
 
 ## PDF export flow
 
+Share link and compression are independent options:
+
+| Compress PDF | Share link | Result |
+| --- | --- | --- |
+| Off | Off | Full-quality PDF downloads |
+| On | Off | Compressed PDF downloads (Render API) |
+| Off | On | Link appears instantly; full-quality PDF uploads (no compressor) |
+| On | On | Link appears instantly; compressed PDF uploads when ready |
+
+Steps:
+
 1. Select floorplans and enter a customer name
 2. Optional: include package examples
-3. Optional: compress PDF for email (smaller file, may take longer)
-4. Optional: create shareable customer link
+3. Optional: create shareable customer link (instant link, background upload)
+4. Optional: compress PDF for email (Render API — only when checked)
 5. App builds the PDF once in the browser
-6. If “Compress PDF” is checked, that PDF is sent once to the Render compressor API
-7. Compressed PDF downloads as `Acton-BR-Presentation-Email-Ready.pdf` when compression succeeds
-8. Normal PDF downloads as `Acton-BR-Presentation.pdf` when compression is unchecked
-9. If share link is enabled, a `customer_presentations` row is created immediately (`status = processing`), then the same PDF uploads in the background and the record updates to `ready`
+6. `compressPdf()` / `VITE_COMPRESS_API_URL` are called **only** when Compress PDF is checked
+7. Compressed PDF downloads as `Acton-BR-Presentation-Email-Ready.pdf`
+8. Normal PDF downloads as `Acton-BR-Presentation.pdf`
+9. Share link uploads the same PDF that was generated (full-quality or compressed)
 
 If compression fails, the original PDF is downloaded and a warning is shown.
 

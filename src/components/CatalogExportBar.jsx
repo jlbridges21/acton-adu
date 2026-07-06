@@ -51,6 +51,7 @@ export default function CatalogExportBar({
 
   const handleCreatePdf = async () => {
     const shouldCompress = compressPdfEnabled === true;
+    const shouldCreateShareLink = createShareableLink === true;
     const trimmedName = customerName.trim();
 
     if (!trimmedName) {
@@ -71,7 +72,8 @@ export default function CatalogExportBar({
     let pendingPresentation = null;
 
     try {
-      if (createShareableLink) {
+      // Step 1: Instant share link — no PDF work, no compression.
+      if (shouldCreateShareLink) {
         pendingPresentation = await createPendingCustomerPresentation({
           title: trimmedName,
           includedExamples: includePackageExamples,
@@ -80,12 +82,15 @@ export default function CatalogExportBar({
 
         setShareUrl(pendingPresentation.shareUrl);
         setNotice(
-          "Share link created. Preparing PDF in the background… You can copy and send the link now. The PDF will appear once processing finishes.",
+          shouldCompress
+            ? "Share link created. Compressing and uploading PDF in the background… You can copy and send the link now."
+            : "Share link created. Uploading full-quality PDF in the background… You can copy and send the link now.",
         );
         setGenerating(false);
         setBackgroundProcessing(true);
       }
 
+      // Step 2: Generate PDF. Compress only when Compress PDF is checked.
       const finalPdf = await createFinalPdf(
         {
           customerName: trimmedName,
@@ -101,15 +106,16 @@ export default function CatalogExportBar({
 
       setExportDetails(finalPdf.details || "");
       setExportWarning(finalPdf.warning || "");
+
+      // Step 3: Always download the result locally.
       downloadPdfExport(finalPdf);
 
-      if (!createShareableLink) {
-        setNotice(`PDF ready. (${formatMb(finalPdf.bytes)} MB)`);
-      }
-
-      if (createShareableLink && pendingPresentation) {
+      // Step 4: Upload to share link when requested (full-quality or compressed).
+      if (shouldCreateShareLink && pendingPresentation) {
         setNotice(
-          "Share link created. Uploading PDF in the background… Keep this tab open until the upload finishes.",
+          shouldCompress
+            ? "Share link created. Uploading compressed PDF… Keep this tab open until the upload finishes."
+            : "Share link created. Uploading full-quality PDF… Keep this tab open until the upload finishes.",
         );
 
         await uploadPdfForExistingPresentation({
@@ -121,11 +127,13 @@ export default function CatalogExportBar({
         });
 
         setNotice("PDF uploaded. Share link is ready.");
+      } else if (!shouldCreateShareLink) {
+        setNotice(`PDF ready. (${formatMb(finalPdf.bytes)} MB)`);
       }
 
       try {
         await saveCatalogExport({
-          customerName,
+          customerName: trimmedName,
           plans: selectedPlans,
         });
         onExportSaved?.();
@@ -141,7 +149,7 @@ export default function CatalogExportBar({
       if (pendingPresentation) {
         await markCustomerPresentationFailed(pendingPresentation.id, message);
         setNotice(
-          "PDF failed to generate. The share link was created, but the presentation could not be prepared.",
+          "The share link was created, but the presentation could not be prepared.",
         );
       } else {
         setError(message);
@@ -216,7 +224,7 @@ export default function CatalogExportBar({
             <span className="text-sm text-slate-700">
               Create shareable customer link
               <span className="mt-0.5 block text-xs text-slate-500">
-                Link appears immediately. PDF uploads in the background.
+                Link appears immediately. Uses full-quality PDF unless Compress PDF is also checked.
               </span>
             </span>
           </label>
@@ -237,7 +245,9 @@ export default function CatalogExportBar({
             />
             <span className="text-sm text-slate-700">
               <span className="block font-medium">Compress PDF</span>
-
+              <span className="mt-0.5 block text-xs text-slate-500">
+                Smaller file for email. Only runs when checked — share links stay fast unless both options are selected.
+              </span>
             </span>
           </label>
 
