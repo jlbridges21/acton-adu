@@ -2,9 +2,8 @@ import { buildCatalogPdfBytes } from "../generateCatalogPdf";
 import { compressPdf } from "../compressPdf";
 import {
   bytesToMb,
+  buildPresentationFileName,
   formatMb,
-  PDF_FILENAME_EMAIL_READY,
-  PDF_FILENAME_PRESENTATION,
 } from "./pdfSizeUtils";
 
 function logExportDebug(message, data) {
@@ -55,7 +54,7 @@ export async function buildHighQualityCatalogPdf(
 /**
  * Optionally compress a PDF for email. Only call when shouldCompress is true.
  */
-async function compressPdfForExport(originalBlob, originalSizeMb, onStatus) {
+async function compressPdfForExport(customerName, originalBlob, originalSizeMb, onStatus) {
   onStatus?.("Compressing PDF for email…");
   logExportDebug("calling compressPdf", { originalSizeMb: originalSizeMb.toFixed(2) });
 
@@ -78,7 +77,7 @@ async function compressPdfForExport(originalBlob, originalSizeMb, onStatus) {
     return {
       blob: new Blob([compressedBytes], { type: "application/pdf" }),
       bytes: compressedBytes,
-      fileName: PDF_FILENAME_EMAIL_READY,
+      fileName: buildPresentationFileName(customerName, { emailReady: true }),
       sizeMb: compressedSizeMb,
       originalSizeMb,
       compressed: true,
@@ -134,7 +133,7 @@ export async function createFinalPdf(
     return {
       blob: highQuality.blob,
       bytes: highQuality.bytes,
-      fileName: PDF_FILENAME_PRESENTATION,
+      fileName: buildPresentationFileName(customerName),
       sizeMb: highQuality.sizeMb,
       originalSizeMb: highQuality.originalSizeMb,
       compressed: false,
@@ -145,6 +144,7 @@ export async function createFinalPdf(
   }
 
   const compressionResult = await compressPdfForExport(
+    customerName,
     highQuality.blob,
     highQuality.originalSizeMb,
     onStatus,
@@ -163,7 +163,7 @@ export async function createFinalPdf(
   return {
     blob: highQuality.blob,
     bytes: highQuality.bytes,
-    fileName: PDF_FILENAME_PRESENTATION,
+    fileName: buildPresentationFileName(customerName),
     sizeMb: highQuality.sizeMb,
     originalSizeMb: highQuality.originalSizeMb,
     compressed: false,

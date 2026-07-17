@@ -246,7 +246,7 @@ export default function CatalogExportBar({
             <span className="text-sm text-slate-700">
               <span className="block font-medium">Compress PDF</span>
               <span className="mt-0.5 block text-xs text-slate-500">
-                Smaller file for email. Only runs when checked — share links stay fast unless both options are selected.
+                Smaller file for email. May take up to 5 minutes to complete.
               </span>
             </span>
           </label>

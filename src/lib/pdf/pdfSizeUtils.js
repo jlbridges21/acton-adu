@@ -15,6 +15,11 @@ export function buildPresentationTitle(customerName) {
   return `${safeName} - ${PRESENTATION_TITLE_SUFFIX}`;
 }
 
+export function buildPresentationFileName(customerName, { emailReady = false } = {}) {
+  const title = buildPresentationTitle(customerName);
+  return emailReady ? `${title} (Email Ready).pdf` : `${title}.pdf`;
+}
+
 export function bytesToMb(bytes) {
   return bytes.length / (1024 * 1024);
 }
