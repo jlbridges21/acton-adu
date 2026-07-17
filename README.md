@@ -59,9 +59,13 @@ Create these buckets in Supabase Storage:
 
 Apply the storage policies from `supabase-schema.sql` and the migration files.
 
-Upload the package examples file to:
+Upload the region-specific package examples files to:
 
-`catalog-assets/package-examples/end-template.pdf`
+- `catalog-assets/package-examples/bay-area-end-template.pdf` (used for Bay Area / San Jose pricing)
+- `catalog-assets/package-examples/la-end-template.pdf` (used for LA pricing)
+
+The app picks the end template based on the active pricing region. If a region
+file is missing it falls back to `catalog-assets/package-examples/end-template.pdf`.
 
 ### 5. Environment variables
 

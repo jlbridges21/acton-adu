@@ -279,8 +279,8 @@ export function downloadCatalogPdf(bytes, { emailReady = false } = {}) {
   URL.revokeObjectURL(url);
 }
 
-async function appendEndTemplate(pdfDoc) {
-  const templateBytes = await fetchEndTemplatePdfBytes();
+async function appendEndTemplate(pdfDoc, priceRegion) {
+  const templateBytes = await fetchEndTemplatePdfBytes(priceRegion);
 
   let templateDoc;
   try {
@@ -343,7 +343,7 @@ export async function buildCatalogPdfBytes({
 
   if (includePackageExamples) {
     try {
-      await appendEndTemplate(pdfDoc);
+      await appendEndTemplate(pdfDoc, priceRegion);
     } catch (err) {
       throw new Error(
         err.message ||

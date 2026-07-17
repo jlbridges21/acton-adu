@@ -1,8 +1,24 @@
 import { supabase, isSupabaseConfigured } from "./supabaseClient";
+import { PRICE_REGION } from "../config/pricing";
 
 export const CATALOG_ASSETS_BUCKET = "catalog-assets";
-export const END_TEMPLATE_PATH = "package-examples/end-template.pdf";
-const STATIC_END_TEMPLATE_URL = `${import.meta.env.BASE_URL}package-examples/end-template.pdf`;
+
+// Region-specific end templates (appended as the package examples appendix).
+const END_TEMPLATE_FILES = {
+  [PRICE_REGION.SAN_JOSE]: "bay-area-end-template.pdf",
+  [PRICE_REGION.LA]: "la-end-template.pdf",
+};
+
+// Legacy single template, kept as a fallback if a region file is missing.
+const DEFAULT_END_TEMPLATE_FILE = "end-template.pdf";
+
+function endTemplateFileForRegion(priceRegion) {
+  return END_TEMPLATE_FILES[priceRegion] || DEFAULT_END_TEMPLATE_FILE;
+}
+
+export function endTemplateStoragePath(priceRegion) {
+  return `package-examples/${endTemplateFileForRegion(priceRegion)}`;
+}
 
 async function fetchBytesFromUrl(url) {
   const response = await fetch(url);
@@ -12,24 +28,25 @@ async function fetchBytesFromUrl(url) {
   return new Uint8Array(await response.arrayBuffer());
 }
 
-/**
- * Fetch the fixed package-examples PDF.
- * Prefers the copy shipped with the app (updated on each Vercel deploy),
- * then falls back to Supabase Storage.
- */
-export async function fetchEndTemplatePdfBytes() {
-  const staticBytes = await fetchBytesFromUrl(STATIC_END_TEMPLATE_URL);
+async function fetchTemplateByFileName(fileName) {
+  const storagePath = `package-examples/${fileName}`;
+
+  // 1. Prefer the copy shipped with the app (updated on each Vercel deploy).
+  const staticBytes = await fetchBytesFromUrl(
+    `${import.meta.env.BASE_URL}package-examples/${encodeURIComponent(fileName)}`,
+  );
   if (staticBytes) {
     return staticBytes;
   }
 
   if (!isSupabaseConfigured) {
-    throw new Error("Supabase is not configured.");
+    return null;
   }
 
+  // 2. Fall back to Supabase Storage.
   const { data, error } = await supabase.storage
     .from(CATALOG_ASSETS_BUCKET)
-    .download(END_TEMPLATE_PATH);
+    .download(storagePath);
 
   if (!error && data) {
     return new Uint8Array(await data.arrayBuffer());
@@ -37,14 +54,32 @@ export async function fetchEndTemplatePdfBytes() {
 
   const { data: publicUrlData } = supabase.storage
     .from(CATALOG_ASSETS_BUCKET)
-    .getPublicUrl(END_TEMPLATE_PATH);
+    .getPublicUrl(storagePath);
 
-  const storageBytes = await fetchBytesFromUrl(publicUrlData.publicUrl);
-  if (storageBytes) {
-    return storageBytes;
+  return fetchBytesFromUrl(publicUrlData.publicUrl);
+}
+
+/**
+ * Fetch the package-examples PDF for the given price region.
+ * Bay Area (San Jose) and LA each have their own end template, with a
+ * fallback to the legacy end-template.pdf if the region file is not found.
+ */
+export async function fetchEndTemplatePdfBytes(priceRegion) {
+  const candidateFiles = [
+    endTemplateFileForRegion(priceRegion),
+    DEFAULT_END_TEMPLATE_FILE,
+  ].filter((file, index, files) => files.indexOf(file) === index);
+
+  for (const fileName of candidateFiles) {
+    const bytes = await fetchTemplateByFileName(fileName);
+    if (bytes) {
+      return bytes;
+    }
   }
 
   throw new Error(
-    "Could not download the package examples PDF. Confirm package-examples/end-template.pdf is deployed or uploaded to catalog-assets in Supabase Storage.",
+    "Could not download the package examples PDF. Confirm the region end template " +
+      `(${endTemplateFileForRegion(priceRegion)}) is deployed under package-examples/ ` +
+      "or uploaded to catalog-assets in Supabase Storage.",
   );
 }
