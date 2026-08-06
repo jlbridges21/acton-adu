@@ -5,4 +5,5 @@ export const SERIES_OPTIONS = [
   "Signature Series",
   "Bonus Series",
   "Age In Place",
+  "Adapt Series",
 ];
