@@ -111,17 +111,23 @@ export async function updateFloorplan(id, plan) {
     throw new Error("Supabase is not configured.");
   }
 
+  const payload = {
+    name: plan.name,
+    square_feet: Math.round(Number(plan.squareFeet)),
+    beds: Math.round(Number(plan.beds)),
+    baths: Number(plan.baths),
+    base_price: Math.round(Number(plan.basePrice)),
+    pre_approved: Boolean(plan.preApproved),
+    series: plan.series,
+  };
+
+  if (plan.fileUrl !== undefined) {
+    payload.file_url = plan.fileUrl;
+  }
+
   const { data, error } = await supabase
     .from("floorplans")
-    .update({
-      name: plan.name,
-      square_feet: Math.round(Number(plan.squareFeet)),
-      beds: Math.round(Number(plan.beds)),
-      baths: Number(plan.baths),
-      base_price: Math.round(Number(plan.basePrice)),
-      pre_approved: Boolean(plan.preApproved),
-      series: plan.series,
-    })
+    .update(payload)
     .eq("id", id)
     .select("id")
     .maybeSingle();
@@ -137,6 +143,30 @@ export async function updateFloorplan(id, plan) {
   }
 
   return data;
+}
+
+/**
+ * Update multiple floorplans sequentially (admins only).
+ * Returns { saved, failed } where failed is [{ id, name, error }].
+ */
+export async function updateFloorplansBulk(plans) {
+  const saved = [];
+  const failed = [];
+
+  for (const plan of plans) {
+    try {
+      await updateFloorplan(plan.id, plan);
+      saved.push(plan.id);
+    } catch (err) {
+      failed.push({
+        id: plan.id,
+        name: plan.name,
+        error: err.message || "Failed to update.",
+      });
+    }
+  }
+
+  return { saved, failed };
 }
 
 async function removeStorageFile(filePath) {

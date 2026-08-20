@@ -135,6 +135,7 @@ Restart `npm run dev` after changing env vars.
 - Optional PDF compression for email-friendly downloads (user opt-in checkbox)
 - Optional shareable customer presentation links (`/share/:token`)
 - Admin upload, edit, delete, and replace plan files
+- Admin bulk plan editor (`/admin/plans`) — table by series with sortable columns and batch save
 - Saved catalogue history per user
 
 ## PDF export flow

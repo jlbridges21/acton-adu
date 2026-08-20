@@ -160,6 +160,7 @@ export default function LibraryPage() {
       <Header
         onAddPlan={handleAddPlanClick}
         showAddPlan
+        showAdminEditor={isAdmin}
         onOpenCatalogHistory={() => setCatalogHistoryOpen(true)}
         userEmail={user?.email}
         onSignOut={signOut}

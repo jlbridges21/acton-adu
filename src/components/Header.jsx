@@ -1,7 +1,10 @@
+import { Link } from "react-router-dom";
+
 export default function Header({
   badge = "Floorplan Library",
   onAddPlan,
   showAddPlan = false,
+  showAdminEditor = false,
   onOpenCatalogHistory,
   userEmail,
   onSignOut,
@@ -17,6 +20,14 @@ export default function Header({
           >
             My Catalogues
           </button>
+        )}
+        {showAdminEditor && (
+          <Link
+            to="/admin/plans"
+            className="rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-100"
+          >
+            Edit Plans Table
+          </Link>
         )}
         {showAddPlan && onAddPlan && (
           <button
