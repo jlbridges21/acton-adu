@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import PriceRegionToggle from "../components/PriceRegionToggle";
 import { SERIES_OPTIONS } from "../config/series";
@@ -8,18 +8,18 @@ import { usePriceRegion } from "../context/PriceRegionContext";
 import { fetchFloorplans, updateFloorplansBulk } from "../lib/floorplans";
 import { formatPrice, normalizeSeries } from "../utils/filters";
 
-/** Column order used for display, sort, and Excel paste. */
+/** Column order used for display, sort, copy, and paste. */
 const COLUMNS = [
-  { key: "name", label: "Plan Name", pasteable: true },
-  { key: "series", label: "Series", pasteable: true },
-  { key: "squareFeet", label: "Sq Ft", pasteable: true },
-  { key: "basePrice", label: "Base Price", pasteable: true },
-  { key: "beds", label: "Beds", pasteable: true },
-  { key: "baths", label: "Baths", pasteable: true },
-  { key: "fileUrl", label: "Image URL", pasteable: true },
+  { key: "name", label: "Plan Name" },
+  { key: "series", label: "Series" },
+  { key: "squareFeet", label: "Sq Ft" },
+  { key: "basePrice", label: "Base Price" },
+  { key: "beds", label: "Beds" },
+  { key: "baths", label: "Baths" },
+  { key: "fileUrl", label: "Image URL" },
 ];
 
-const PASTEABLE_KEYS = COLUMNS.filter((c) => c.pasteable).map((c) => c.key);
+const COLUMN_KEYS = COLUMNS.map((c) => c.key);
 
 const cellClass =
   "box-border h-9 w-full border-0 bg-transparent px-2 text-sm text-slate-800 outline-none focus:bg-blue-50 focus:ring-2 focus:ring-inset focus:ring-blue-500";
@@ -76,7 +76,6 @@ function cleanPastedValue(key, raw) {
 
 /**
  * Parse Excel / Google Sheets clipboard text into a 2D grid.
- * Sheets copy as tab-separated values with newline-separated rows.
  */
 export function parseClipboardGrid(text) {
   const normalized = String(text ?? "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -85,9 +84,56 @@ export function parseClipboardGrid(text) {
 
   return lines.map((line) => {
     if (line.includes("\t")) return line.split("\t");
-    // Fallback when a single column of values was copied
     return [line];
   });
+}
+
+function getSelectionBounds(selection) {
+  if (!selection) return null;
+  return {
+    rowStart: Math.min(selection.anchorRow, selection.focusRow),
+    rowEnd: Math.max(selection.anchorRow, selection.focusRow),
+    colStart: Math.min(selection.anchorCol, selection.focusCol),
+    colEnd: Math.max(selection.anchorCol, selection.focusCol),
+  };
+}
+
+function isCellSelected(selection, rowIndex, colIndex) {
+  const bounds = getSelectionBounds(selection);
+  if (!bounds) return false;
+  return (
+    rowIndex >= bounds.rowStart &&
+    rowIndex <= bounds.rowEnd &&
+    colIndex >= bounds.colStart &&
+    colIndex <= bounds.colEnd
+  );
+}
+
+function buildClipboardTsv(draftsById, visiblePlanIds, selection) {
+  const bounds = getSelectionBounds(selection);
+  if (!bounds) return "";
+
+  const lines = [];
+  for (let r = bounds.rowStart; r <= bounds.rowEnd; r += 1) {
+    const planId = visiblePlanIds[r];
+    const draft = draftsById.get(planId);
+    if (!draft) continue;
+
+    const cells = [];
+    for (let c = bounds.colStart; c <= bounds.colEnd; c += 1) {
+      const key = COLUMN_KEYS[c];
+      cells.push(String(draft[key] ?? ""));
+    }
+    lines.push(cells.join("\t"));
+  }
+
+  return lines.join("\n");
+}
+
+function selectionCellCount(selection) {
+  const bounds = getSelectionBounds(selection);
+  if (!bounds) return 0;
+  return (bounds.rowEnd - bounds.rowStart + 1) * (bounds.colEnd - bounds.colStart + 1);
 }
 
 function parseDraft(draft) {
@@ -175,9 +221,23 @@ function SortHeader({ columnKey, label, sortKey, sortDir, onSort }) {
   );
 }
 
+function hasNativeTextSelection() {
+  const el = document.activeElement;
+  if (!el) return false;
+  if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    return typeof start === "number" && typeof end === "number" && start !== end;
+  }
+  const selection = window.getSelection?.();
+  return Boolean(selection && selection.toString());
+}
+
 export default function AdminFloorplansPage() {
   const { isAdmin, user, signOut } = useAuth();
   const { priceRegion } = usePriceRegion();
+  const tableRef = useRef(null);
+  const isDraggingRef = useRef(false);
 
   const [originals, setOriginals] = useState({});
   const [drafts, setDrafts] = useState([]);
@@ -188,7 +248,7 @@ export default function AdminFloorplansPage() {
   const [sortKey, setSortKey] = useState("series");
   const [sortDir, setSortDir] = useState("asc");
   const [collapsedSeries, setCollapsedSeries] = useState(() => new Set());
-  const [activeCell, setActiveCell] = useState(null);
+  const [selection, setSelection] = useState(null);
 
   const loadFloorplans = useCallback(async () => {
     setLoading(true);
@@ -214,6 +274,14 @@ export default function AdminFloorplansPage() {
     loadFloorplans();
   }, [loadFloorplans]);
 
+  useEffect(() => {
+    const stopDrag = () => {
+      isDraggingRef.current = false;
+    };
+    window.addEventListener("mouseup", stopDrag);
+    return () => window.removeEventListener("mouseup", stopDrag);
+  }, []);
+
   const dirtyIds = useMemo(() => {
     const ids = new Set();
     for (const draft of drafts) {
@@ -227,9 +295,14 @@ export default function AdminFloorplansPage() {
 
   const dirtyCount = dirtyIds.size;
 
+  const draftsById = useMemo(() => {
+    const map = new Map();
+    for (const draft of drafts) map.set(draft.id, draft);
+    return map;
+  }, [drafts]);
+
   const groupedRows = useMemo(() => {
     const sorted = [...drafts].sort((a, b) => {
-      // Keep series as primary grouping even when sorting another column.
       if (sortKey !== "series") {
         const bySeries = normalizeSeries(a.series).localeCompare(
           normalizeSeries(b.series),
@@ -266,7 +339,6 @@ export default function AdminFloorplansPage() {
     return groupList;
   }, [drafts, sortKey, sortDir, priceRegion]);
 
-  /** Visible plan rows in table order — paste fills down this list. */
   const visiblePlanIds = useMemo(() => {
     const ids = [];
     for (const group of groupedRows) {
@@ -275,6 +347,42 @@ export default function AdminFloorplansPage() {
     }
     return ids;
   }, [groupedRows, collapsedSeries]);
+
+  const selectedCount = selectionCellCount(selection);
+
+  const copySelectionToClipboard = useCallback(async () => {
+    if (!selection) return false;
+
+    const text = buildClipboardTsv(draftsById, visiblePlanIds, selection);
+    if (!text) return false;
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setNotice(
+        `Copied ${selectedCount} cell${selectedCount === 1 ? "" : "s"} to clipboard.`,
+      );
+      return true;
+    } catch {
+      setError("Could not copy to clipboard. Check browser permissions.");
+      return false;
+    }
+  }, [selection, draftsById, visiblePlanIds, selectedCount]);
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      const isCopy =
+        (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c";
+      if (!isCopy) return;
+      if (!selection) return;
+      if (hasNativeTextSelection()) return;
+
+      event.preventDefault();
+      copySelectionToClipboard();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selection, copySelectionToClipboard]);
 
   if (!isAdmin) {
     return <Navigate to="/" replace />;
@@ -288,13 +396,59 @@ export default function AdminFloorplansPage() {
     setError("");
   };
 
-  const applyPaste = (startPlanId, startColumnKey, clipboardText) => {
+  const selectCell = (rowIndex, colIndex, { extend = false } = {}) => {
+    setSelection((current) => {
+      if (extend && current) {
+        return {
+          ...current,
+          focusRow: rowIndex,
+          focusCol: colIndex,
+        };
+      }
+      return {
+        anchorRow: rowIndex,
+        anchorCol: colIndex,
+        focusRow: rowIndex,
+        focusCol: colIndex,
+      };
+    });
+  };
+
+  const handleCellMouseDown = (event, rowIndex, colIndex) => {
+    if (event.button !== 0) return;
+
+    if (event.shiftKey) {
+      event.preventDefault();
+      selectCell(rowIndex, colIndex, { extend: true });
+      return;
+    }
+
+    isDraggingRef.current = true;
+    selectCell(rowIndex, colIndex);
+  };
+
+  const handleCellMouseEnter = (rowIndex, colIndex) => {
+    if (!isDraggingRef.current) return;
+    setSelection((current) => {
+      if (!current) {
+        return {
+          anchorRow: rowIndex,
+          anchorCol: colIndex,
+          focusRow: rowIndex,
+          focusCol: colIndex,
+        };
+      }
+      return {
+        ...current,
+        focusRow: rowIndex,
+        focusCol: colIndex,
+      };
+    });
+  };
+
+  const applyPaste = (startRowIndex, startColIndex, clipboardText) => {
     const grid = parseClipboardGrid(clipboardText);
     if (grid.length === 0) return;
-
-    const startRowIndex = visiblePlanIds.indexOf(startPlanId);
-    const startColIndex = PASTEABLE_KEYS.indexOf(startColumnKey);
-    if (startRowIndex < 0 || startColIndex < 0) return;
 
     const updates = new Map();
     let updatedCells = 0;
@@ -303,7 +457,7 @@ export default function AdminFloorplansPage() {
       const planId = visiblePlanIds[startRowIndex + r];
       if (!planId) break;
 
-      const current = drafts.find((draft) => draft.id === planId);
+      const current = draftsById.get(planId);
       if (!current) continue;
 
       const next = { ...(updates.get(planId) || current) };
@@ -311,7 +465,7 @@ export default function AdminFloorplansPage() {
       let rowChanged = false;
 
       for (let c = 0; c < row.length; c += 1) {
-        const columnKey = PASTEABLE_KEYS[startColIndex + c];
+        const columnKey = COLUMN_KEYS[startColIndex + c];
         if (!columnKey) break;
 
         const nextValue = cleanPastedValue(columnKey, row[c]);
@@ -337,19 +491,22 @@ export default function AdminFloorplansPage() {
     );
     setError("");
     setNotice(
-      `Pasted into ${updates.size} plan${updates.size === 1 ? "" : "s"} (${updatedCells} cell${updatedCells === 1 ? "" : "s"}). Review the highlighted rows, then Save Changes.`,
+      `Pasted into ${updates.size} plan${updates.size === 1 ? "" : "s"} (${updatedCells} cell${updatedCells === 1 ? "" : "s"}). Review highlighted rows, then Save Changes.`,
     );
   };
 
-  const handleCellPaste = (event, planId, columnKey) => {
+  const handleCellPaste = (event, rowIndex, colIndex) => {
     const text = event.clipboardData?.getData("text/plain");
     if (!text || (!text.includes("\t") && !text.includes("\n"))) {
-      // Single-cell paste — let the input handle it normally.
       return;
     }
 
     event.preventDefault();
-    applyPaste(planId, columnKey, text);
+
+    const bounds = getSelectionBounds(selection);
+    const startRow = bounds ? bounds.rowStart : rowIndex;
+    const startCol = bounds ? bounds.colStart : colIndex;
+    applyPaste(startRow, startCol, text);
   };
 
   const handleSort = (key) => {
@@ -359,6 +516,7 @@ export default function AdminFloorplansPage() {
       setSortKey(key);
       setSortDir("asc");
     }
+    setSelection(null);
   };
 
   const toggleSeries = (key) => {
@@ -368,6 +526,7 @@ export default function AdminFloorplansPage() {
       else next.add(key);
       return next;
     });
+    setSelection(null);
   };
 
   const expandAll = () => setCollapsedSeries(new Set());
@@ -432,6 +591,40 @@ export default function AdminFloorplansPage() {
       ? [value, ...SERIES_OPTIONS]
       : SERIES_OPTIONS;
 
+  const renderEditableCell = ({
+    draft,
+    rowIndex,
+    colIndex,
+    columnKey,
+    extraTdClass = "",
+    children,
+  }) => {
+    const selected = isCellSelected(selection, rowIndex, colIndex);
+    return (
+      <td
+        className={`${tdClass} ${extraTdClass} ${
+          selected ? "bg-blue-100 ring-1 ring-inset ring-blue-400" : ""
+        }`}
+        onMouseDown={(event) => handleCellMouseDown(event, rowIndex, colIndex)}
+        onMouseEnter={() => handleCellMouseEnter(rowIndex, colIndex)}
+        data-row={rowIndex}
+        data-col={colIndex}
+      >
+        {children ?? (
+          <input
+            type="text"
+            value={draft[columnKey]}
+            onChange={(e) => updateDraft(draft.id, columnKey, e.target.value)}
+            onPaste={(e) => handleCellPaste(e, rowIndex, colIndex)}
+            onFocus={() => selectCell(rowIndex, colIndex)}
+            className={cellClass}
+            aria-label={`${COLUMNS[colIndex].label} for ${draft.name}`}
+          />
+        )}
+      </td>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 pb-28">
       <header className="border-b border-slate-200 bg-white px-4 py-6 sm:px-6 lg:px-8">
@@ -447,8 +640,7 @@ export default function AdminFloorplansPage() {
               Admin Plan Editor
             </h1>
             <p className="mt-1 max-w-3xl text-sm text-slate-600">
-              Excel-style grid: click a cell, paste rows from your spreadsheet (Cmd/Ctrl+V),
-              then Save. Plans must be in the same order as your sheet.
+              Excel-style grid: select cells, copy (Cmd/Ctrl+C), paste (Cmd/Ctrl+V), then Save.
             </p>
           </div>
 
@@ -473,20 +665,23 @@ export default function AdminFloorplansPage() {
       <main className="px-4 py-6 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-[1600px]">
           <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-            <p className="font-semibold">How to paste from Excel / Google Sheets</p>
-            <ol className="mt-1 list-decimal space-y-1 pl-5 text-blue-900/90">
-              <li>Sort this table so plans match your spreadsheet order (usually Series, then name or sq ft).</li>
-              <li>Copy one or more rows/cells from your sheet.</li>
+            <p className="font-semibold">Copy & paste like Excel</p>
+            <ul className="mt-1 list-disc space-y-1 pl-5 text-blue-900/90">
               <li>
-                Click the starting cell here (for example Base Price on the first plan), then paste
-                (Cmd+V / Ctrl+V).
+                <strong>Select:</strong> click a cell, Shift+click to extend, or click and drag
+                across cells.
               </li>
-              <li>Values fill down in visible order. Click Save Changes when ready.</li>
-            </ol>
+              <li>
+                <strong>Copy:</strong> Cmd/Ctrl+C (or the Copy button) copies the selection as
+                spreadsheet rows.
+              </li>
+              <li>
+                <strong>Paste:</strong> click a starting cell (or keep a selection) and Cmd/Ctrl+V
+                to fill downward in the same order.
+              </li>
+            </ul>
             <p className="mt-2 text-xs text-blue-800">
               Column order: Plan Name → Series → Sq Ft → Base Price → Beds → Baths → Image URL.
-              You can paste a subset (e.g. only Base Price) by starting in that column.
-              Currency symbols and commas are stripped automatically.
             </p>
           </div>
 
@@ -509,6 +704,14 @@ export default function AdminFloorplansPage() {
               className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
             >
               Collapse all
+            </button>
+            <button
+              type="button"
+              onClick={copySelectionToClipboard}
+              disabled={!selection}
+              className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+            >
+              Copy selection{selectedCount > 0 ? ` (${selectedCount})` : ""}
             </button>
             {isLa && (
               <p className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800">
@@ -542,7 +745,13 @@ export default function AdminFloorplansPage() {
           )}
 
           {!loading && drafts.length > 0 && (
-            <div className="overflow-x-auto border border-slate-300 bg-white shadow-sm">
+            <div
+              ref={tableRef}
+              className="overflow-x-auto border border-slate-300 bg-white shadow-sm select-none"
+              onMouseLeave={() => {
+                isDraggingRef.current = false;
+              }}
+            >
               <table className="min-w-full border-collapse text-sm">
                 <thead className="sticky top-0 z-10">
                   <tr>
@@ -596,6 +805,7 @@ export default function AdminFloorplansPage() {
                       {!collapsed &&
                         group.plans.map((draft) => {
                           const dirty = dirtyIds.has(draft.id);
+                          const rowIndex = visiblePlanIds.indexOf(draft.id);
                           const sjPrice =
                             Number(String(draft.basePrice).replace(/,/g, "")) || 0;
                           const laPrice = getDisplayBasePrice(
@@ -607,156 +817,139 @@ export default function AdminFloorplansPage() {
                           return (
                             <tr
                               key={draft.id}
-                              className={dirty ? "bg-blue-50/70" : "bg-white"}
+                              className={dirty ? "bg-blue-50/40" : "bg-white"}
                             >
-                              <td className={`${tdClass} min-w-[10rem]`}>
-                                <input
-                                  type="text"
-                                  value={draft.name}
-                                  onChange={(e) =>
-                                    updateDraft(draft.id, "name", e.target.value)
-                                  }
-                                  onPaste={(e) =>
-                                    handleCellPaste(e, draft.id, "name")
-                                  }
-                                  onFocus={() =>
-                                    setActiveCell({ id: draft.id, key: "name" })
-                                  }
-                                  className={cellClass}
-                                  aria-label={`Plan name for ${draft.name}`}
-                                />
-                              </td>
-                              <td className={`${tdClass} min-w-[11rem]`}>
-                                <select
-                                  value={draft.series}
-                                  onChange={(e) =>
-                                    updateDraft(draft.id, "series", e.target.value)
-                                  }
-                                  onPaste={(e) =>
-                                    handleCellPaste(e, draft.id, "series")
-                                  }
-                                  onFocus={() =>
-                                    setActiveCell({ id: draft.id, key: "series" })
-                                  }
-                                  className={`${cellClass} cursor-pointer`}
-                                  aria-label={`Series for ${draft.name}`}
-                                >
-                                  <option value="" disabled>
-                                    Select…
-                                  </option>
-                                  {seriesOptionsWithCurrent(draft.series).map((series) => (
-                                    <option key={series} value={series}>
-                                      {series}
-                                    </option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td className={`${tdClass} w-24`}>
-                                <input
-                                  type="text"
-                                  inputMode="numeric"
-                                  value={draft.squareFeet}
-                                  onChange={(e) =>
-                                    updateDraft(draft.id, "squareFeet", e.target.value)
-                                  }
-                                  onPaste={(e) =>
-                                    handleCellPaste(e, draft.id, "squareFeet")
-                                  }
-                                  onFocus={() =>
-                                    setActiveCell({ id: draft.id, key: "squareFeet" })
-                                  }
-                                  className={cellClass}
-                                  aria-label={`Square footage for ${draft.name}`}
-                                />
-                              </td>
-                              <td className={`${tdClass} min-w-[9rem] bg-emerald-50/40`}>
-                                <input
-                                  type="text"
-                                  inputMode="numeric"
-                                  value={draft.basePrice}
-                                  onChange={(e) =>
-                                    updateDraft(draft.id, "basePrice", e.target.value)
-                                  }
-                                  onPaste={(e) =>
-                                    handleCellPaste(e, draft.id, "basePrice")
-                                  }
-                                  onFocus={() =>
-                                    setActiveCell({ id: draft.id, key: "basePrice" })
-                                  }
-                                  className={cellClass}
-                                  aria-label={`San Jose base price for ${draft.name}`}
-                                />
-                                {isLa && (
-                                  <p className="border-t border-slate-200 px-2 py-0.5 text-[11px] text-slate-500">
-                                    LA {formatPrice(laPrice)}
-                                  </p>
-                                )}
-                              </td>
-                              <td className={`${tdClass} w-20`}>
-                                <input
-                                  type="text"
-                                  inputMode="numeric"
-                                  value={draft.beds}
-                                  onChange={(e) =>
-                                    updateDraft(draft.id, "beds", e.target.value)
-                                  }
-                                  onPaste={(e) =>
-                                    handleCellPaste(e, draft.id, "beds")
-                                  }
-                                  onFocus={() =>
-                                    setActiveCell({ id: draft.id, key: "beds" })
-                                  }
-                                  className={cellClass}
-                                  aria-label={`Bedrooms for ${draft.name}`}
-                                />
-                              </td>
-                              <td className={`${tdClass} w-20`}>
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  value={draft.baths}
-                                  onChange={(e) =>
-                                    updateDraft(draft.id, "baths", e.target.value)
-                                  }
-                                  onPaste={(e) =>
-                                    handleCellPaste(e, draft.id, "baths")
-                                  }
-                                  onFocus={() =>
-                                    setActiveCell({ id: draft.id, key: "baths" })
-                                  }
-                                  className={cellClass}
-                                  aria-label={`Bathrooms for ${draft.name}`}
-                                />
-                              </td>
-                              <td className={`${tdClass} min-w-[14rem]`}>
-                                <div className="flex items-stretch">
-                                  <input
-                                    type="text"
-                                    value={draft.fileUrl}
+                              {renderEditableCell({
+                                draft,
+                                rowIndex,
+                                colIndex: 0,
+                                columnKey: "name",
+                                extraTdClass: "min-w-[10rem]",
+                              })}
+
+                              {renderEditableCell({
+                                draft,
+                                rowIndex,
+                                colIndex: 1,
+                                columnKey: "series",
+                                extraTdClass: "min-w-[11rem]",
+                                children: (
+                                  <select
+                                    value={draft.series}
                                     onChange={(e) =>
-                                      updateDraft(draft.id, "fileUrl", e.target.value)
+                                      updateDraft(draft.id, "series", e.target.value)
                                     }
                                     onPaste={(e) =>
-                                      handleCellPaste(e, draft.id, "fileUrl")
+                                      handleCellPaste(e, rowIndex, 1)
                                     }
-                                    onFocus={() =>
-                                      setActiveCell({ id: draft.id, key: "fileUrl" })
-                                    }
-                                    className={`${cellClass} flex-1`}
-                                    aria-label={`Image URL for ${draft.name}`}
-                                  />
-                                  {draft.fileUrl && (
-                                    <a
-                                      href={draft.fileUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="shrink-0 border-l border-slate-200 px-2 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50"
-                                    >
-                                      LINK
-                                    </a>
-                                  )}
-                                </div>
-                              </td>
+                                    onFocus={() => selectCell(rowIndex, 1)}
+                                    className={`${cellClass} cursor-pointer`}
+                                    aria-label={`Series for ${draft.name}`}
+                                  >
+                                    <option value="" disabled>
+                                      Select…
+                                    </option>
+                                    {seriesOptionsWithCurrent(draft.series).map(
+                                      (series) => (
+                                        <option key={series} value={series}>
+                                          {series}
+                                        </option>
+                                      ),
+                                    )}
+                                  </select>
+                                ),
+                              })}
+
+                              {renderEditableCell({
+                                draft,
+                                rowIndex,
+                                colIndex: 2,
+                                columnKey: "squareFeet",
+                                extraTdClass: "w-24",
+                              })}
+
+                              {renderEditableCell({
+                                draft,
+                                rowIndex,
+                                colIndex: 3,
+                                columnKey: "basePrice",
+                                extraTdClass: "min-w-[9rem] bg-emerald-50/40",
+                                children: (
+                                  <>
+                                    <input
+                                      type="text"
+                                      inputMode="numeric"
+                                      value={draft.basePrice}
+                                      onChange={(e) =>
+                                        updateDraft(draft.id, "basePrice", e.target.value)
+                                      }
+                                      onPaste={(e) =>
+                                        handleCellPaste(e, rowIndex, 3)
+                                      }
+                                      onFocus={() => selectCell(rowIndex, 3)}
+                                      className={cellClass}
+                                      aria-label={`San Jose base price for ${draft.name}`}
+                                    />
+                                    {isLa && (
+                                      <p className="border-t border-slate-200 px-2 py-0.5 text-[11px] text-slate-500">
+                                        LA {formatPrice(laPrice)}
+                                      </p>
+                                    )}
+                                  </>
+                                ),
+                              })}
+
+                              {renderEditableCell({
+                                draft,
+                                rowIndex,
+                                colIndex: 4,
+                                columnKey: "beds",
+                                extraTdClass: "w-20",
+                              })}
+
+                              {renderEditableCell({
+                                draft,
+                                rowIndex,
+                                colIndex: 5,
+                                columnKey: "baths",
+                                extraTdClass: "w-20",
+                              })}
+
+                              {renderEditableCell({
+                                draft,
+                                rowIndex,
+                                colIndex: 6,
+                                columnKey: "fileUrl",
+                                extraTdClass: "min-w-[14rem]",
+                                children: (
+                                  <div className="flex items-stretch">
+                                    <input
+                                      type="text"
+                                      value={draft.fileUrl}
+                                      onChange={(e) =>
+                                        updateDraft(draft.id, "fileUrl", e.target.value)
+                                      }
+                                      onPaste={(e) =>
+                                        handleCellPaste(e, rowIndex, 6)
+                                      }
+                                      onFocus={() => selectCell(rowIndex, 6)}
+                                      className={`${cellClass} flex-1`}
+                                      aria-label={`Image URL for ${draft.name}`}
+                                    />
+                                    {draft.fileUrl && (
+                                      <a
+                                        href={draft.fileUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="shrink-0 border-l border-slate-200 px-2 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50"
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                      >
+                                        LINK
+                                      </a>
+                                    )}
+                                  </div>
+                                ),
+                              })}
                             </tr>
                           );
                         })}
@@ -767,9 +960,10 @@ export default function AdminFloorplansPage() {
             </div>
           )}
 
-          {activeCell && (
+          {selection && (
             <p className="mt-2 text-xs text-slate-500">
-              Active cell: {activeCell.key} · paste starts here and fills downward
+              {selectedCount} cell{selectedCount === 1 ? "" : "s"} selected · press Cmd/Ctrl+C
+              to copy, or use Copy selection
             </p>
           )}
         </div>
