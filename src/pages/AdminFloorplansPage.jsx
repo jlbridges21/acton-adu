@@ -1,25 +1,30 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import PriceRegionToggle from "../components/PriceRegionToggle";
-import SeriesSelect from "../components/SeriesSelect";
+import { SERIES_OPTIONS } from "../config/series";
 import { getDisplayBasePrice, PRICE_REGION } from "../config/pricing";
 import { useAuth } from "../context/AuthContext";
 import { usePriceRegion } from "../context/PriceRegionContext";
 import { fetchFloorplans, updateFloorplansBulk } from "../lib/floorplans";
 import { formatPrice, normalizeSeries } from "../utils/filters";
 
-const cellInputClass =
-  "w-full min-w-0 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20";
-
-const SORT_COLUMNS = [
-  { key: "name", label: "Plan Name" },
-  { key: "series", label: "Series" },
-  { key: "squareFeet", label: "Sq Ft" },
-  { key: "basePrice", label: "Base Price" },
-  { key: "beds", label: "Beds" },
-  { key: "baths", label: "Baths" },
-  { key: "fileUrl", label: "Image URL" },
+/** Column order used for display, sort, and Excel paste. */
+const COLUMNS = [
+  { key: "name", label: "Plan Name", pasteable: true },
+  { key: "series", label: "Series", pasteable: true },
+  { key: "squareFeet", label: "Sq Ft", pasteable: true },
+  { key: "basePrice", label: "Base Price", pasteable: true },
+  { key: "beds", label: "Beds", pasteable: true },
+  { key: "baths", label: "Baths", pasteable: true },
+  { key: "fileUrl", label: "Image URL", pasteable: true },
 ];
+
+const PASTEABLE_KEYS = COLUMNS.filter((c) => c.pasteable).map((c) => c.key);
+
+const cellClass =
+  "box-border h-9 w-full border-0 bg-transparent px-2 text-sm text-slate-800 outline-none focus:bg-blue-50 focus:ring-2 focus:ring-inset focus:ring-blue-500";
+
+const tdClass = "border border-slate-200 p-0 align-middle";
 
 function planToDraft(plan) {
   return {
@@ -49,6 +54,40 @@ function draftsEqual(a, b) {
     a.preApproved === b.preApproved &&
     a.fileUrl === b.fileUrl
   );
+}
+
+function cleanPastedValue(key, raw) {
+  let value = String(raw ?? "").trim();
+  if (!value) return "";
+
+  if (key === "basePrice" || key === "squareFeet" || key === "beds" || key === "baths") {
+    value = value.replace(/[$,]/g, "").replace(/\s/g, "");
+  }
+
+  if (key === "series") {
+    const match = SERIES_OPTIONS.find(
+      (option) => option.toLowerCase() === value.toLowerCase(),
+    );
+    return match || value;
+  }
+
+  return value;
+}
+
+/**
+ * Parse Excel / Google Sheets clipboard text into a 2D grid.
+ * Sheets copy as tab-separated values with newline-separated rows.
+ */
+export function parseClipboardGrid(text) {
+  const normalized = String(text ?? "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const lines = normalized.replace(/\n$/, "").split("\n");
+  if (lines.length === 1 && lines[0] === "") return [];
+
+  return lines.map((line) => {
+    if (line.includes("\t")) return line.split("\t");
+    // Fallback when a single column of values was copied
+    return [line];
+  });
 }
 
 function parseDraft(draft) {
@@ -120,16 +159,17 @@ function compareValues(a, b, key, priceRegion) {
 function SortHeader({ columnKey, label, sortKey, sortDir, onSort }) {
   const active = sortKey === columnKey;
   return (
-    <th scope="col" className="px-3 py-3 text-left">
+    <th
+      scope="col"
+      className="border border-slate-300 bg-slate-700 px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-white"
+    >
       <button
         type="button"
         onClick={() => onSort(columnKey)}
-        className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:text-slate-900"
+        className="inline-flex items-center gap-1 hover:text-blue-100"
       >
         {label}
-        <span className="text-slate-400" aria-hidden="true">
-          {active ? (sortDir === "asc" ? "↑" : "↓") : "↕"}
-        </span>
+        <span aria-hidden="true">{active ? (sortDir === "asc" ? "↑" : "↓") : "↕"}</span>
       </button>
     </th>
   );
@@ -147,6 +187,8 @@ export default function AdminFloorplansPage() {
   const [notice, setNotice] = useState("");
   const [sortKey, setSortKey] = useState("series");
   const [sortDir, setSortDir] = useState("asc");
+  const [collapsedSeries, setCollapsedSeries] = useState(() => new Set());
+  const [activeCell, setActiveCell] = useState(null);
 
   const loadFloorplans = useCallback(async () => {
     setLoading(true);
@@ -187,6 +229,16 @@ export default function AdminFloorplansPage() {
 
   const groupedRows = useMemo(() => {
     const sorted = [...drafts].sort((a, b) => {
+      // Keep series as primary grouping even when sorting another column.
+      if (sortKey !== "series") {
+        const bySeries = normalizeSeries(a.series).localeCompare(
+          normalizeSeries(b.series),
+          undefined,
+          { sensitivity: "base" },
+        );
+        if (bySeries !== 0) return bySeries;
+      }
+
       const result = compareValues(a, b, sortKey, priceRegion);
       return sortDir === "asc" ? result : -result;
     });
@@ -202,7 +254,6 @@ export default function AdminFloorplansPage() {
     }
 
     let groupList = [...groups.values()];
-
     if (sortKey === "series") {
       groupList.sort((a, b) => {
         const result = a.label.localeCompare(b.label, undefined, {
@@ -210,14 +261,20 @@ export default function AdminFloorplansPage() {
         });
         return sortDir === "asc" ? result : -result;
       });
-    } else {
-      groupList.sort((a, b) =>
-        a.label.localeCompare(b.label, undefined, { sensitivity: "base" }),
-      );
     }
 
     return groupList;
   }, [drafts, sortKey, sortDir, priceRegion]);
+
+  /** Visible plan rows in table order — paste fills down this list. */
+  const visiblePlanIds = useMemo(() => {
+    const ids = [];
+    for (const group of groupedRows) {
+      if (collapsedSeries.has(group.key)) continue;
+      for (const plan of group.plans) ids.push(plan.id);
+    }
+    return ids;
+  }, [groupedRows, collapsedSeries]);
 
   if (!isAdmin) {
     return <Navigate to="/" replace />;
@@ -231,6 +288,70 @@ export default function AdminFloorplansPage() {
     setError("");
   };
 
+  const applyPaste = (startPlanId, startColumnKey, clipboardText) => {
+    const grid = parseClipboardGrid(clipboardText);
+    if (grid.length === 0) return;
+
+    const startRowIndex = visiblePlanIds.indexOf(startPlanId);
+    const startColIndex = PASTEABLE_KEYS.indexOf(startColumnKey);
+    if (startRowIndex < 0 || startColIndex < 0) return;
+
+    const updates = new Map();
+    let updatedCells = 0;
+
+    for (let r = 0; r < grid.length; r += 1) {
+      const planId = visiblePlanIds[startRowIndex + r];
+      if (!planId) break;
+
+      const current = drafts.find((draft) => draft.id === planId);
+      if (!current) continue;
+
+      const next = { ...(updates.get(planId) || current) };
+      const row = grid[r];
+      let rowChanged = false;
+
+      for (let c = 0; c < row.length; c += 1) {
+        const columnKey = PASTEABLE_KEYS[startColIndex + c];
+        if (!columnKey) break;
+
+        const nextValue = cleanPastedValue(columnKey, row[c]);
+        if (next[columnKey] !== nextValue) {
+          next[columnKey] = nextValue;
+          updatedCells += 1;
+          rowChanged = true;
+        }
+      }
+
+      if (rowChanged) {
+        updates.set(planId, next);
+      }
+    }
+
+    if (updates.size === 0) {
+      setNotice("Paste did not change any cells. Check column start and plan order.");
+      return;
+    }
+
+    setDrafts((current) =>
+      current.map((draft) => updates.get(draft.id) || draft),
+    );
+    setError("");
+    setNotice(
+      `Pasted into ${updates.size} plan${updates.size === 1 ? "" : "s"} (${updatedCells} cell${updatedCells === 1 ? "" : "s"}). Review the highlighted rows, then Save Changes.`,
+    );
+  };
+
+  const handleCellPaste = (event, planId, columnKey) => {
+    const text = event.clipboardData?.getData("text/plain");
+    if (!text || (!text.includes("\t") && !text.includes("\n"))) {
+      // Single-cell paste — let the input handle it normally.
+      return;
+    }
+
+    event.preventDefault();
+    applyPaste(planId, columnKey, text);
+  };
+
   const handleSort = (key) => {
     if (sortKey === key) {
       setSortDir((dir) => (dir === "asc" ? "desc" : "asc"));
@@ -239,6 +360,19 @@ export default function AdminFloorplansPage() {
       setSortDir("asc");
     }
   };
+
+  const toggleSeries = (key) => {
+    setCollapsedSeries((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const expandAll = () => setCollapsedSeries(new Set());
+  const collapseAll = () =>
+    setCollapsedSeries(new Set(groupedRows.map((group) => group.key)));
 
   const handleDiscard = () => {
     if (dirtyCount === 0) return;
@@ -293,6 +427,10 @@ export default function AdminFloorplansPage() {
   };
 
   const isLa = priceRegion === PRICE_REGION.LA;
+  const seriesOptionsWithCurrent = (value) =>
+    value && !SERIES_OPTIONS.includes(value)
+      ? [value, ...SERIES_OPTIONS]
+      : SERIES_OPTIONS;
 
   return (
     <div className="min-h-screen bg-slate-50 pb-28">
@@ -308,9 +446,9 @@ export default function AdminFloorplansPage() {
             <h1 className="mt-2 text-2xl font-semibold text-slate-900 sm:text-3xl">
               Admin Plan Editor
             </h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-600">
-              Edit plans in bulk by series. Base price is always stored as San Jose pricing;
-              switch to LA to preview calculated LA prices.
+            <p className="mt-1 max-w-3xl text-sm text-slate-600">
+              Excel-style grid: click a cell, paste rows from your spreadsheet (Cmd/Ctrl+V),
+              then Save. Plans must be in the same order as your sheet.
             </p>
           </div>
 
@@ -334,15 +472,47 @@ export default function AdminFloorplansPage() {
 
       <main className="px-4 py-6 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-[1600px]">
+          <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            <p className="font-semibold">How to paste from Excel / Google Sheets</p>
+            <ol className="mt-1 list-decimal space-y-1 pl-5 text-blue-900/90">
+              <li>Sort this table so plans match your spreadsheet order (usually Series, then name or sq ft).</li>
+              <li>Copy one or more rows/cells from your sheet.</li>
+              <li>
+                Click the starting cell here (for example Base Price on the first plan), then paste
+                (Cmd+V / Ctrl+V).
+              </li>
+              <li>Values fill down in visible order. Click Save Changes when ready.</li>
+            </ol>
+            <p className="mt-2 text-xs text-blue-800">
+              Column order: Plan Name → Series → Sq Ft → Base Price → Beds → Baths → Image URL.
+              You can paste a subset (e.g. only Base Price) by starting in that column.
+              Currency symbols and commas are stripped automatically.
+            </p>
+          </div>
+
           <div className="mb-4 flex flex-wrap items-center gap-3">
             <p className="text-sm text-slate-600">
               {loading
                 ? "Loading plans…"
                 : `${drafts.length} plan${drafts.length === 1 ? "" : "s"} · ${dirtyCount} unsaved change${dirtyCount === 1 ? "" : "s"}`}
             </p>
+            <button
+              type="button"
+              onClick={expandAll}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Expand all
+            </button>
+            <button
+              type="button"
+              onClick={collapseAll}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Collapse all
+            </button>
             {isLa && (
               <p className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800">
-                LA view — prices are calculated. Edit San Jose base price to change them.
+                LA view — paste/edit San Jose base price; LA preview updates below each price.
               </p>
             )}
           </div>
@@ -372,18 +542,18 @@ export default function AdminFloorplansPage() {
           )}
 
           {!loading && drafts.length > 0 && (
-            <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto border border-slate-300 bg-white shadow-sm">
               <table className="min-w-full border-collapse text-sm">
-                <thead className="sticky top-0 z-10 bg-slate-50">
-                  <tr className="border-b border-slate-200">
-                    {SORT_COLUMNS.map((column) => (
+                <thead className="sticky top-0 z-10">
+                  <tr>
+                    {COLUMNS.map((column) => (
                       <SortHeader
                         key={column.key}
                         columnKey={column.key}
                         label={
                           column.key === "basePrice"
                             ? isLa
-                              ? "Base Price (SJ) / LA"
+                              ? "Base Price (SJ)"
                               : "Base Price"
                             : column.label
                         }
@@ -395,141 +565,212 @@ export default function AdminFloorplansPage() {
                   </tr>
                 </thead>
 
-                {groupedRows.map((group) => (
-                  <tbody key={group.key}>
-                    <tr className="bg-slate-100">
-                      <td
-                        colSpan={SORT_COLUMNS.length}
-                        className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700"
-                      >
-                        {group.label}
-                        <span className="ml-2 font-normal normal-case text-slate-500">
-                          ({group.plans.length})
-                        </span>
-                      </td>
-                    </tr>
-
-                    {group.plans.map((draft) => {
-                      const dirty = dirtyIds.has(draft.id);
-                      const sjPrice =
-                        Number(String(draft.basePrice).replace(/,/g, "")) || 0;
-                      const laPrice = getDisplayBasePrice(
-                        sjPrice,
-                        PRICE_REGION.LA,
-                        Number(draft.squareFeet) || 0,
-                      );
-
-                      return (
-                        <tr
-                          key={draft.id}
-                          className={`border-b border-slate-100 ${
-                            dirty ? "bg-blue-50/40" : "bg-white"
-                          }`}
+                {groupedRows.map((group) => {
+                  const collapsed = collapsedSeries.has(group.key);
+                  return (
+                    <tbody key={group.key}>
+                      <tr className="bg-amber-50">
+                        <td
+                          colSpan={COLUMNS.length}
+                          className="border border-slate-300 px-2 py-1.5"
                         >
-                          <td className="px-3 py-2 align-top">
-                            <input
-                              type="text"
-                              value={draft.name}
-                              onChange={(e) =>
-                                updateDraft(draft.id, "name", e.target.value)
-                              }
-                              className={cellInputClass}
-                              aria-label={`Plan name for ${draft.name}`}
-                            />
-                          </td>
-                          <td className="px-3 py-2 align-top min-w-[11rem]">
-                            <SeriesSelect
-                              id={`series-${draft.id}`}
-                              value={draft.series}
-                              onChange={(value) =>
-                                updateDraft(draft.id, "series", value)
-                              }
-                            />
-                          </td>
-                          <td className="px-3 py-2 align-top w-28">
-                            <input
-                              type="number"
-                              min="0"
-                              value={draft.squareFeet}
-                              onChange={(e) =>
-                                updateDraft(draft.id, "squareFeet", e.target.value)
-                              }
-                              className={cellInputClass}
-                              aria-label={`Square footage for ${draft.name}`}
-                            />
-                          </td>
-                          <td className="px-3 py-2 align-top min-w-[10rem]">
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={draft.basePrice}
-                              onChange={(e) =>
-                                updateDraft(draft.id, "basePrice", e.target.value)
-                              }
-                              className={cellInputClass}
-                              aria-label={`San Jose base price for ${draft.name}`}
-                            />
-                            {isLa && (
-                              <p className="mt-1 text-xs text-slate-500">
-                                LA: {formatPrice(laPrice)}
-                              </p>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 align-top w-24">
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={draft.beds}
-                              onChange={(e) =>
-                                updateDraft(draft.id, "beds", e.target.value)
-                              }
-                              className={cellInputClass}
-                              aria-label={`Bedrooms for ${draft.name}`}
-                            />
-                          </td>
-                          <td className="px-3 py-2 align-top w-24">
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.5"
-                              value={draft.baths}
-                              onChange={(e) =>
-                                updateDraft(draft.id, "baths", e.target.value)
-                              }
-                              className={cellInputClass}
-                              aria-label={`Bathrooms for ${draft.name}`}
-                            />
-                          </td>
-                          <td className="px-3 py-2 align-top min-w-[16rem]">
-                            <input
-                              type="url"
-                              value={draft.fileUrl}
-                              onChange={(e) =>
-                                updateDraft(draft.id, "fileUrl", e.target.value)
-                              }
-                              className={cellInputClass}
-                              aria-label={`Image URL for ${draft.name}`}
-                            />
-                            {draft.fileUrl && (
-                              <a
-                                href={draft.fileUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="mt-1 inline-block text-xs font-medium text-blue-600 hover:text-blue-700"
-                              >
-                                Open
-                              </a>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                ))}
+                          <button
+                            type="button"
+                            onClick={() => toggleSeries(group.key)}
+                            className="inline-flex items-center gap-2 text-left text-sm font-semibold text-slate-800"
+                          >
+                            <span
+                              className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-300 bg-white text-xs"
+                              aria-hidden="true"
+                            >
+                              {collapsed ? "+" : "−"}
+                            </span>
+                            {group.label}
+                            <span className="font-normal text-slate-500">
+                              ({group.plans.length})
+                            </span>
+                          </button>
+                        </td>
+                      </tr>
+
+                      {!collapsed &&
+                        group.plans.map((draft) => {
+                          const dirty = dirtyIds.has(draft.id);
+                          const sjPrice =
+                            Number(String(draft.basePrice).replace(/,/g, "")) || 0;
+                          const laPrice = getDisplayBasePrice(
+                            sjPrice,
+                            PRICE_REGION.LA,
+                            Number(draft.squareFeet) || 0,
+                          );
+
+                          return (
+                            <tr
+                              key={draft.id}
+                              className={dirty ? "bg-blue-50/70" : "bg-white"}
+                            >
+                              <td className={`${tdClass} min-w-[10rem]`}>
+                                <input
+                                  type="text"
+                                  value={draft.name}
+                                  onChange={(e) =>
+                                    updateDraft(draft.id, "name", e.target.value)
+                                  }
+                                  onPaste={(e) =>
+                                    handleCellPaste(e, draft.id, "name")
+                                  }
+                                  onFocus={() =>
+                                    setActiveCell({ id: draft.id, key: "name" })
+                                  }
+                                  className={cellClass}
+                                  aria-label={`Plan name for ${draft.name}`}
+                                />
+                              </td>
+                              <td className={`${tdClass} min-w-[11rem]`}>
+                                <select
+                                  value={draft.series}
+                                  onChange={(e) =>
+                                    updateDraft(draft.id, "series", e.target.value)
+                                  }
+                                  onPaste={(e) =>
+                                    handleCellPaste(e, draft.id, "series")
+                                  }
+                                  onFocus={() =>
+                                    setActiveCell({ id: draft.id, key: "series" })
+                                  }
+                                  className={`${cellClass} cursor-pointer`}
+                                  aria-label={`Series for ${draft.name}`}
+                                >
+                                  <option value="" disabled>
+                                    Select…
+                                  </option>
+                                  {seriesOptionsWithCurrent(draft.series).map((series) => (
+                                    <option key={series} value={series}>
+                                      {series}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className={`${tdClass} w-24`}>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={draft.squareFeet}
+                                  onChange={(e) =>
+                                    updateDraft(draft.id, "squareFeet", e.target.value)
+                                  }
+                                  onPaste={(e) =>
+                                    handleCellPaste(e, draft.id, "squareFeet")
+                                  }
+                                  onFocus={() =>
+                                    setActiveCell({ id: draft.id, key: "squareFeet" })
+                                  }
+                                  className={cellClass}
+                                  aria-label={`Square footage for ${draft.name}`}
+                                />
+                              </td>
+                              <td className={`${tdClass} min-w-[9rem] bg-emerald-50/40`}>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={draft.basePrice}
+                                  onChange={(e) =>
+                                    updateDraft(draft.id, "basePrice", e.target.value)
+                                  }
+                                  onPaste={(e) =>
+                                    handleCellPaste(e, draft.id, "basePrice")
+                                  }
+                                  onFocus={() =>
+                                    setActiveCell({ id: draft.id, key: "basePrice" })
+                                  }
+                                  className={cellClass}
+                                  aria-label={`San Jose base price for ${draft.name}`}
+                                />
+                                {isLa && (
+                                  <p className="border-t border-slate-200 px-2 py-0.5 text-[11px] text-slate-500">
+                                    LA {formatPrice(laPrice)}
+                                  </p>
+                                )}
+                              </td>
+                              <td className={`${tdClass} w-20`}>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={draft.beds}
+                                  onChange={(e) =>
+                                    updateDraft(draft.id, "beds", e.target.value)
+                                  }
+                                  onPaste={(e) =>
+                                    handleCellPaste(e, draft.id, "beds")
+                                  }
+                                  onFocus={() =>
+                                    setActiveCell({ id: draft.id, key: "beds" })
+                                  }
+                                  className={cellClass}
+                                  aria-label={`Bedrooms for ${draft.name}`}
+                                />
+                              </td>
+                              <td className={`${tdClass} w-20`}>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={draft.baths}
+                                  onChange={(e) =>
+                                    updateDraft(draft.id, "baths", e.target.value)
+                                  }
+                                  onPaste={(e) =>
+                                    handleCellPaste(e, draft.id, "baths")
+                                  }
+                                  onFocus={() =>
+                                    setActiveCell({ id: draft.id, key: "baths" })
+                                  }
+                                  className={cellClass}
+                                  aria-label={`Bathrooms for ${draft.name}`}
+                                />
+                              </td>
+                              <td className={`${tdClass} min-w-[14rem]`}>
+                                <div className="flex items-stretch">
+                                  <input
+                                    type="text"
+                                    value={draft.fileUrl}
+                                    onChange={(e) =>
+                                      updateDraft(draft.id, "fileUrl", e.target.value)
+                                    }
+                                    onPaste={(e) =>
+                                      handleCellPaste(e, draft.id, "fileUrl")
+                                    }
+                                    onFocus={() =>
+                                      setActiveCell({ id: draft.id, key: "fileUrl" })
+                                    }
+                                    className={`${cellClass} flex-1`}
+                                    aria-label={`Image URL for ${draft.name}`}
+                                  />
+                                  {draft.fileUrl && (
+                                    <a
+                                      href={draft.fileUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="shrink-0 border-l border-slate-200 px-2 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50"
+                                    >
+                                      LINK
+                                    </a>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  );
+                })}
               </table>
             </div>
+          )}
+
+          {activeCell && (
+            <p className="mt-2 text-xs text-slate-500">
+              Active cell: {activeCell.key} · paste starts here and fills downward
+            </p>
           )}
         </div>
       </main>
