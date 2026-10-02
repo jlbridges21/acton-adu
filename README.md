@@ -42,6 +42,7 @@ Run `supabase-schema.sql` in the **SQL Editor** for new projects.
 - `supabase-migration-catalog-assets-storage.sql`
 - `supabase-migration-customer-presentations.sql`
 - `supabase-migration-customer-presentation-status.sql` (async share links — run on existing DBs)
+- `supabase-migration-plan-series.sql` (admin-managed series, including Black and White Series)
 
 ### 3. Auth
 
@@ -136,6 +137,7 @@ Restart `npm run dev` after changing env vars.
 - Optional shareable customer presentation links (`/share/:token`)
 - Admin upload, edit, delete, and replace plan files
 - Admin bulk plan editor (`/admin/plans`) — table by series with sortable columns and batch save
+- Admin series management — add, rename, and delete series (including Black and White Series)
 - Saved catalogue history per user
 
 ## PDF export flow

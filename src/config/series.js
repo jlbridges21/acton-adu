@@ -1,4 +1,4 @@
-/** Canonical series values for add/edit floorplan forms. */
+/** Fallback series used if the plan_series table has not been created yet. */
 export const SERIES_OPTIONS = [
   "Investor Series",
   "Investor+ Series",
@@ -6,4 +6,5 @@ export const SERIES_OPTIONS = [
   "Bonus Series",
   "Age In Place",
   "Adapt Series",
+  "Black and White Series",
 ];

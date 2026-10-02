@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
+import ManageSeriesPanel from "../components/ManageSeriesPanel";
 import PriceRegionToggle from "../components/PriceRegionToggle";
-import { SERIES_OPTIONS } from "../config/series";
 import { getDisplayBasePrice, PRICE_REGION } from "../config/pricing";
 import { useAuth } from "../context/AuthContext";
 import { usePriceRegion } from "../context/PriceRegionContext";
+import { useSeries } from "../context/SeriesContext";
 import { fetchFloorplans, updateFloorplansBulk } from "../lib/floorplans";
 import { formatPrice, normalizeSeries } from "../utils/filters";
 
@@ -56,7 +57,7 @@ function draftsEqual(a, b) {
   );
 }
 
-function cleanPastedValue(key, raw) {
+function cleanPastedValue(key, raw, seriesNames) {
   let value = String(raw ?? "").trim();
   if (!value) return "";
 
@@ -65,7 +66,7 @@ function cleanPastedValue(key, raw) {
   }
 
   if (key === "series") {
-    const match = SERIES_OPTIONS.find(
+    const match = seriesNames.find(
       (option) => option.toLowerCase() === value.toLowerCase(),
     );
     return match || value;
@@ -236,6 +237,7 @@ function hasNativeTextSelection() {
 export default function AdminFloorplansPage() {
   const { isAdmin, user, signOut } = useAuth();
   const { priceRegion } = usePriceRegion();
+  const { seriesNames } = useSeries();
   const tableRef = useRef(null);
   const isDraggingRef = useRef(false);
 
@@ -468,7 +470,7 @@ export default function AdminFloorplansPage() {
         const columnKey = COLUMN_KEYS[startColIndex + c];
         if (!columnKey) break;
 
-        const nextValue = cleanPastedValue(columnKey, row[c]);
+        const nextValue = cleanPastedValue(columnKey, row[c], seriesNames);
         if (next[columnKey] !== nextValue) {
           next[columnKey] = nextValue;
           updatedCells += 1;
@@ -587,9 +589,7 @@ export default function AdminFloorplansPage() {
 
   const isLa = priceRegion === PRICE_REGION.LA;
   const seriesOptionsWithCurrent = (value) =>
-    value && !SERIES_OPTIONS.includes(value)
-      ? [value, ...SERIES_OPTIONS]
-      : SERIES_OPTIONS;
+    value && !seriesNames.includes(value) ? [value, ...seriesNames] : seriesNames;
 
   const renderEditableCell = ({
     draft,
@@ -664,6 +664,8 @@ export default function AdminFloorplansPage() {
 
       <main className="px-4 py-6 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-[1600px]">
+          <ManageSeriesPanel onChanged={loadFloorplans} />
+
           <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
             <p className="font-semibold">Copy & paste like Excel</p>
             <ul className="mt-1 list-disc space-y-1 pl-5 text-blue-900/90">
