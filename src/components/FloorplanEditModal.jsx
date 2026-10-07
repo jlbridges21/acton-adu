@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import FloorplanMedia from "./FloorplanMedia";
 import ModalShell from "./ModalShell";
 import SeriesSelect from "./SeriesSelect";
@@ -16,14 +16,15 @@ const labelClass = "mb-1 block text-sm font-medium text-slate-700";
 
 export default function FloorplanEditModal({ plan, onClose, onSaved, onDeleted }) {
   const [form, setForm] = useState(null);
+  const [loadedPlanId, setLoadedPlanId] = useState(null);
   const [replacementFile, setReplacementFile] = useState(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    if (!plan) return;
+  if (plan && plan.id !== loadedPlanId) {
+    setLoadedPlanId(plan.id);
     setForm({
       name: plan.name,
       series: plan.series ?? "",
@@ -36,7 +37,7 @@ export default function FloorplanEditModal({ plan, onClose, onSaved, onDeleted }
     setReplacementFile(null);
     setError("");
     setSuccess("");
-  }, [plan]);
+  }
 
   if (!plan || !form) return null;
 

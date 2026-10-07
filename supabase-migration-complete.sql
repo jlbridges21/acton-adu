@@ -11,7 +11,8 @@
 --        • floorplans            (public)
 --        • catalog-assets        (public)
 --        • customer-presentations (public)
---   2. Upload catalog-assets/package-examples/end-template.pdf (optional appendix)
+--   2. Run supabase-migration-end-templates.sql, then upload San Jose and LA
+--      end templates from Settings → Catalogue end templates
 --
 -- AFTER running, grant roles:
 --   update public.profiles set role = 'acton' where email = 'you@example.com';

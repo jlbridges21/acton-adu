@@ -358,6 +358,7 @@ export async function buildCatalogPdfBytes({
       throw new Error(
         err.message ||
           "Could not append the package examples PDF. Try again or export without package examples.",
+        { cause: err },
       );
     }
   }

@@ -23,8 +23,27 @@ export function SeriesProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    let cancelled = false;
+
+    fetchPlanSeries()
+      .then((data) => {
+        if (cancelled) return;
+        setSeries(data);
+        setError("");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setSeries([]);
+        setError(err.message || "Could not load series.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const usingFallback = Boolean(error);
   const seriesNames = usingFallback ? SERIES_OPTIONS : series.map((item) => item.name);
@@ -44,6 +63,7 @@ export function SeriesProvider({ children }) {
   return <SeriesContext.Provider value={value}>{children}</SeriesContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useSeries() {
   const ctx = useContext(SeriesContext);
   if (!ctx) {

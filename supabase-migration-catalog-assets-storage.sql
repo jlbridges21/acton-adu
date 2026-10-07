@@ -1,5 +1,6 @@
 -- Storage read access for catalogue PDF assets (run after creating bucket "catalog-assets").
--- Upload: package-examples/end-template.pdf
+-- End-template upload, versioning, and storage policies are in
+-- supabase-migration-end-templates.sql. Do not upload package-examples PDFs by hand.
 
 -- create policy "Acton and admin can read catalog assets"
 -- on storage.objects for select

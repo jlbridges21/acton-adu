@@ -1,4 +1,4 @@
-import { PRICE_REGION } from "../config/pricing";
+import { PRICE_REGION, PRICE_REGION_LABELS } from "../config/pricing";
 import { usePriceRegion } from "../context/PriceRegionContext";
 
 const optionClass = (active) =>
@@ -23,7 +23,7 @@ export default function PriceRegionToggle() {
         aria-pressed={priceRegion === PRICE_REGION.SAN_JOSE}
         onClick={() => setPriceRegion(PRICE_REGION.SAN_JOSE)}
       >
-        San Jose
+        {PRICE_REGION_LABELS[PRICE_REGION.SAN_JOSE]}
       </button>
       <button
         type="button"
@@ -31,7 +31,7 @@ export default function PriceRegionToggle() {
         aria-pressed={priceRegion === PRICE_REGION.LA}
         onClick={() => setPriceRegion(PRICE_REGION.LA)}
       >
-        LA
+        {PRICE_REGION_LABELS[PRICE_REGION.LA]}
       </button>
     </div>
   );

@@ -43,6 +43,8 @@ Run `supabase-schema.sql` in the **SQL Editor** for new projects.
 - `supabase-migration-customer-presentations.sql`
 - `supabase-migration-customer-presentation-status.sql` (async share links — run on existing DBs)
 - `supabase-migration-plan-series.sql` (admin-managed series, including Black and White Series)
+- `supabase-migration-end-templates.sql` (versioned San Jose and LA catalogue end templates)
+- `supabase-migration-customer-presentation-hide-price.sql` (optional hide-price flag on share links)
 
 ### 3. Auth
 
@@ -55,18 +57,15 @@ Create these buckets in Supabase Storage:
 | Bucket | Purpose | Suggested access |
 |--------|---------|------------------|
 | `floorplans` | Plan images/PDFs | Public read; admin upload |
-| `catalog-assets` | Package examples end template | Public read or authenticated read |
+| `catalog-assets` | Catalogue end templates | Public. Leave it public. 50 MB file limit. |
 | `customer-presentations` | Hosted customer PDF links | Public read; acton/admin upload |
 
 Apply the storage policies from `supabase-schema.sql` and the migration files.
 
-Upload the region-specific package examples files to:
-
-- `catalog-assets/package-examples/bay-area-end-template.pdf` (used for Bay Area / San Jose pricing)
-- `catalog-assets/package-examples/la-end-template.pdf` (used for LA pricing)
-
-The app picks the end template based on the active pricing region. If a region
-file is missing it falls back to `catalog-assets/package-examples/end-template.pdf`.
+Catalogue end templates are not uploaded by hand. After running
+`supabase-migration-end-templates.sql`, an admin uploads the San Jose and LA
+PDFs from **Settings → Catalogue end templates**. Each upload is kept as a
+version and can be restored later.
 
 ### 5. Environment variables
 
@@ -137,6 +136,7 @@ Restart `npm run dev` after changing env vars.
 - Optional shareable customer presentation links (`/share/:token`)
 - Admin upload, edit, delete, and replace plan files
 - Admin bulk plan editor (`/admin/plans`) — table by series with sortable columns and batch save
+- Admin settings (`/admin/settings`) — upload, preview, and restore San Jose and LA catalogue end templates
 - Admin series management — add, rename, and delete series (including Black and White Series)
 - Saved catalogue history per user
 

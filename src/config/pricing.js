@@ -3,6 +3,11 @@ export const PRICE_REGION = {
   LA: "la",
 };
 
+export const PRICE_REGION_LABELS = {
+  [PRICE_REGION.SAN_JOSE]: "San Jose",
+  [PRICE_REGION.LA]: "LA",
+};
+
 /** LA price = San Jose base × multiplier + sq ft × rate − offset */
 export const LA_PRICE_MULTIPLIER = 0.431603014;
 export const LA_SQFT_RATE = 211.959324;

@@ -32,7 +32,9 @@ export default function CatalogHistoryModal({ open, onClose, onRestoreSelection 
 
   useEffect(() => {
     if (!open) return;
-    loadHistory();
+    queueMicrotask(() => {
+      loadHistory();
+    });
   }, [open, loadHistory]);
 
   const toggleCustomer = (name) => {

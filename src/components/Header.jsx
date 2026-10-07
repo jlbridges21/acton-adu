@@ -29,6 +29,14 @@ export default function Header({
             Edit Plans Table
           </Link>
         )}
+        {showAdminEditor && (
+          <Link
+            to="/admin/settings"
+            className="rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-100"
+          >
+            Settings
+          </Link>
+        )}
         {showAddPlan && onAddPlan && (
           <button
             type="button"

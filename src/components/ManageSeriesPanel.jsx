@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useSeries } from "../context/SeriesContext";
 import {
   createPlanSeries,
@@ -13,18 +13,20 @@ export default function ManageSeriesPanel({ onChanged }) {
   const { series, usingFallback, error: loadError, refresh } = useSeries();
   const [newName, setNewName] = useState("");
   const [draftNames, setDraftNames] = useState({});
+  const [draftSeries, setDraftSeries] = useState(series);
   const [busyId, setBusyId] = useState("");
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  useEffect(() => {
+  if (series !== draftSeries) {
     const next = {};
     for (const item of series) {
       next[item.id] = item.name;
     }
+    setDraftSeries(series);
     setDraftNames(next);
-  }, [series]);
+  }
 
   const handleAdd = async (event) => {
     event.preventDefault();

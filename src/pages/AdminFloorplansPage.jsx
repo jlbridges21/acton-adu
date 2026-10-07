@@ -78,7 +78,7 @@ function cleanPastedValue(key, raw, seriesNames) {
 /**
  * Parse Excel / Google Sheets clipboard text into a 2D grid.
  */
-export function parseClipboardGrid(text) {
+function parseClipboardGrid(text) {
   const normalized = String(text ?? "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const lines = normalized.replace(/\n$/, "").split("\n");
   if (lines.length === 1 && lines[0] === "") return [];
@@ -273,7 +273,10 @@ export default function AdminFloorplansPage() {
   }, []);
 
   useEffect(() => {
-    loadFloorplans();
+    const id = window.setTimeout(() => {
+      loadFloorplans();
+    }, 0);
+    return () => window.clearTimeout(id);
   }, [loadFloorplans]);
 
   useEffect(() => {
@@ -630,12 +633,20 @@ export default function AdminFloorplansPage() {
       <header className="border-b border-slate-200 bg-white px-4 py-6 sm:px-6 lg:px-8">
         <div className="mx-auto flex max-w-[1600px] flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <Link
-              to="/"
-              className="text-sm font-medium text-blue-600 hover:text-blue-700"
-            >
-              ← Back to library
-            </Link>
+            <div className="flex flex-wrap items-center gap-4">
+              <Link
+                to="/"
+                className="text-sm font-medium text-blue-600 hover:text-blue-700"
+              >
+                ← Back to library
+              </Link>
+              <Link
+                to="/admin/settings"
+                className="text-sm font-medium text-blue-600 hover:text-blue-700"
+              >
+                Settings
+              </Link>
+            </div>
             <h1 className="mt-2 text-2xl font-semibold text-slate-900 sm:text-3xl">
               Admin Plan Editor
             </h1>

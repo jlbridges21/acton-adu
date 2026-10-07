@@ -59,7 +59,10 @@ export default function LibraryPage() {
   }, []);
 
   useEffect(() => {
-    loadFloorplans();
+    const id = window.setTimeout(() => {
+      loadFloorplans();
+    }, 0);
+    return () => window.clearTimeout(id);
   }, [loadFloorplans]);
 
   const seriesOptions = useMemo(() => getUniqueSeries(floorplans), [floorplans]);

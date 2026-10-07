@@ -16,6 +16,7 @@ export function PriceRegionProvider({ children }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function usePriceRegion() {
   const ctx = useContext(PriceRegionContext);
   if (!ctx) {
