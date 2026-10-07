@@ -147,7 +147,14 @@ function drawCoverPage(page, coverImage, customerName, fonts) {
   });
 }
 
-async function drawPlanPage(pdfDoc, plan, fonts, watermarkImage, priceRegion) {
+async function drawPlanPage(
+  pdfDoc,
+  plan,
+  fonts,
+  watermarkImage,
+  priceRegion,
+  { hidePrice = false } = {},
+) {
   const page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
 
   page.drawRectangle({
@@ -196,7 +203,7 @@ async function drawPlanPage(pdfDoc, plan, fonts, watermarkImage, priceRegion) {
   });
   cursorY -= statsSize + 20;
 
-  const priceBlockHeight = 52;
+  const priceBlockHeight = hidePrice ? 0 : 52;
   const imageBottom = MARGIN + priceBlockHeight;
   const availableHeight = cursorY - imageBottom;
   const availableWidth = PAGE_WIDTH - MARGIN * 2;
@@ -229,27 +236,29 @@ async function drawPlanPage(pdfDoc, plan, fonts, watermarkImage, priceRegion) {
     });
   }
 
-  const label = "Base price";
-  const labelSize = 10;
-  const labelWidth = fonts.regular.widthOfTextAtSize(label, labelSize);
-  page.drawText(label, {
-    x: (PAGE_WIDTH - labelWidth) / 2,
-    y: MARGIN + 30,
-    size: labelSize,
-    font: fonts.regular,
-    color: rgb(0.45, 0.5, 0.55),
-  });
+  if (!hidePrice) {
+    const label = "Base price";
+    const labelSize = 10;
+    const labelWidth = fonts.regular.widthOfTextAtSize(label, labelSize);
+    page.drawText(label, {
+      x: (PAGE_WIDTH - labelWidth) / 2,
+      y: MARGIN + 30,
+      size: labelSize,
+      font: fonts.regular,
+      color: rgb(0.45, 0.5, 0.55),
+    });
 
-  const priceText = formatPlanPrice(plan, priceRegion);
-  const priceSize = 28;
-  const priceWidth = fonts.bold.widthOfTextAtSize(priceText, priceSize);
-  page.drawText(priceText, {
-    x: (PAGE_WIDTH - priceWidth) / 2,
-    y: MARGIN,
-    size: priceSize,
-    font: fonts.bold,
-    color: rgb(0.05, 0.35, 0.75),
-  });
+    const priceText = formatPlanPrice(plan, priceRegion);
+    const priceSize = 28;
+    const priceWidth = fonts.bold.widthOfTextAtSize(priceText, priceSize);
+    page.drawText(priceText, {
+      x: (PAGE_WIDTH - priceWidth) / 2,
+      y: MARGIN,
+      size: priceSize,
+      font: fonts.bold,
+      color: rgb(0.05, 0.35, 0.75),
+    });
+  }
 
   if (plan.preApproved) {
     const badge = "Pre-approved";
@@ -305,6 +314,7 @@ export async function buildCatalogPdfBytes({
   plans,
   priceRegion,
   includePackageExamples = false,
+  hidePrice = false,
 }) {
   const trimmedName = customerName.trim();
   if (!trimmedName) {
@@ -338,7 +348,7 @@ export async function buildCatalogPdfBytes({
   }
 
   for (const plan of sortedPlans) {
-    await drawPlanPage(pdfDoc, plan, fonts, watermarkImage, priceRegion);
+    await drawPlanPage(pdfDoc, plan, fonts, watermarkImage, priceRegion, { hidePrice });
   }
 
   if (includePackageExamples) {
@@ -363,6 +373,7 @@ export async function generateCatalogPdf({
   plans,
   priceRegion,
   includePackageExamples = false,
+  hidePrice = false,
   emailReady = false,
 }) {
   const pdfBytes = await buildCatalogPdfBytes({
@@ -370,6 +381,7 @@ export async function generateCatalogPdf({
     plans,
     priceRegion,
     includePackageExamples,
+    hidePrice,
   });
 
   downloadCatalogPdf(pdfBytes, { emailReady });

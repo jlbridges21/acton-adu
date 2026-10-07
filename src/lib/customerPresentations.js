@@ -34,6 +34,7 @@ export function mapCustomerPresentationFromDb(row) {
     shareToken: row.share_token,
     status: row.status || (row.file_url ? PRESENTATION_STATUS.READY : PRESENTATION_STATUS.PROCESSING),
     errorMessage: row.error_message,
+    hidePrice: row.hide_price ?? false,
   };
 }
 
@@ -44,6 +45,7 @@ export async function createPendingCustomerPresentation({
   title,
   includedExamples,
   compressed,
+  hidePrice = false,
 }) {
   if (!isSupabaseConfigured) {
     throw new Error("Supabase is not configured.");
@@ -58,6 +60,7 @@ export async function createPendingCustomerPresentation({
       share_token: shareToken,
       included_examples: includedExamples,
       compressed,
+      hide_price: hidePrice,
       status: PRESENTATION_STATUS.PROCESSING,
       file_url: null,
       file_path: null,
@@ -176,11 +179,13 @@ export async function saveCustomerPresentation({
   includedExamples,
   compressed,
   fileSizeMb,
+  hidePrice = false,
 }) {
   const pending = await createPendingCustomerPresentation({
     title,
     includedExamples,
     compressed,
+    hidePrice,
   });
 
   await uploadPdfForExistingPresentation({

@@ -28,7 +28,7 @@ function buildCompressionDetails(result) {
  * Never calls the Render compressor.
  */
 export async function buildHighQualityCatalogPdf(
-  { customerName, plans, priceRegion, includePackageExamples = false },
+  { customerName, plans, priceRegion, includePackageExamples = false, hidePrice = false },
   onStatus,
 ) {
   onStatus?.("Generating PDF…");
@@ -38,6 +38,7 @@ export async function buildHighQualityCatalogPdf(
     plans,
     priceRegion,
     includePackageExamples,
+    hidePrice,
   });
 
   const originalSizeMb = bytesToMb(bytes);
@@ -108,6 +109,7 @@ export async function createFinalPdf(
     plans,
     priceRegion,
     includePackageExamples = false,
+    hidePrice = false,
     shouldCompress = false,
   },
   onStatus,
@@ -116,10 +118,11 @@ export async function createFinalPdf(
     shouldCompress,
     planCount: plans.length,
     includePackageExamples,
+    hidePrice,
   });
 
   const highQuality = await buildHighQualityCatalogPdf(
-    { customerName, plans, priceRegion, includePackageExamples },
+    { customerName, plans, priceRegion, includePackageExamples, hidePrice },
     onStatus,
   );
 
@@ -187,6 +190,7 @@ export async function exportCatalogPdf(options, onStatus) {
   const result = await createFinalPdf(
     {
       ...options,
+      hidePrice: options.hidePrice === true,
       shouldCompress: options.compressPdfEnabled === true,
     },
     onStatus,

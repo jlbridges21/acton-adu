@@ -24,6 +24,7 @@ export default function CatalogExportBar({
   const [backgroundProcessing, setBackgroundProcessing] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [includePackageExamples, setIncludePackageExamples] = useState(false);
+  const [hidePrice, setHidePrice] = useState(false);
   const [createShareableLink, setCreateShareableLink] = useState(false);
   const [compressPdfEnabled, setCompressPdfEnabled] = useState(false);
   const [shareUrl, setShareUrl] = useState("");
@@ -78,6 +79,7 @@ export default function CatalogExportBar({
           title: trimmedName,
           includedExamples: includePackageExamples,
           compressed: shouldCompress,
+          hidePrice,
         });
 
         setShareUrl(pendingPresentation.shareUrl);
@@ -97,6 +99,7 @@ export default function CatalogExportBar({
           plans: selectedPlans,
           priceRegion,
           includePackageExamples,
+          hidePrice,
           shouldCompress,
         },
         (message) => {
@@ -205,6 +208,26 @@ export default function CatalogExportBar({
             />
             <span className="text-sm text-slate-700">
               Include exterior, interior, and feasibility package examples
+            </span>
+          </label>
+
+          <label className="mt-2 flex max-w-xl cursor-pointer items-start gap-2.5">
+            <input
+              type="checkbox"
+              checked={hidePrice}
+              onChange={(e) => {
+                setHidePrice(e.target.checked);
+                setError("");
+                setNotice("");
+              }}
+              disabled={controlsDisabled}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-sm text-slate-700">
+              <span className="block font-medium">Hide price</span>
+              <span className="mt-0.5 block text-xs text-slate-500">
+                Generates the PDF without base prices on the floorplan pages.
+              </span>
             </span>
           </label>
 
